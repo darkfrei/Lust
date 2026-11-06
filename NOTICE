@@ -1,0 +1,12 @@
+Lust is licensed under either of the Apache License, Version 2.0 (LICENSE-APACHE)
+or the MIT license (LICENSE-MIT), at your option.
+
+Unless you explicitly state otherwise, any contribution you submit for inclusion in
+Lust, as defined in the Apache License 2.0, is dual licensed as above, without any
+additional terms or conditions.
+
+Third-party parts that come with it:
+- Lua 5.4 (MIT license, PUC-Rio), built into the program through the mlua crate
+  (MIT license).
+- The Rust crates listed in Cargo.lock, each under its own license (MIT or
+  Apache-2.0 for nearly all, all permissive at the time of writing).

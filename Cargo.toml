@@ -1,0 +1,25 @@
+[package]
+name = "lust"
+version = "0.1.0"
+edition = "2021"
+description = "Lust: Rust + Lua. An ECS world whose rules, operations and views are Lua code stored in the world itself, run in a sandbox with a time and memory budget, under roles with rights, every change in a hash-chained journal, and an optional door for an AI over MCP"
+license = "MIT OR Apache-2.0"
+keywords = ["ecs", "lua", "sandbox", "journal", "mcp"]
+
+# mcp: the door for an AI (src/mcp.rs, examples/door.rs). on unless default-features = false.
+# to remove it: delete those two files, the mcp lines in src/lib.rs, this block and the
+# block [[example]] door at the end
+[features]
+default = ["mcp"]
+mcp = []
+
+[dependencies]
+mlua = { version = "0.12", features = ["lua54", "vendored", "serialize"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+# the example of the door needs mcp (see [features])
+[[example]]
+name = "door"
+required-features = ["mcp"]
