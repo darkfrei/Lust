@@ -23,3 +23,8 @@ sha2 = "0.10"
 [[example]]
 name = "door"
 required-features = ["mcp"]
+
+# the stdio server needs mcp too
+[[example]]
+name = "stdio"
+required-features = ["mcp"]

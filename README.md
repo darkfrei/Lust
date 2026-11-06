@@ -29,6 +29,8 @@ cargo run --example hello     # 30 lines: one type, one role, one operation, a j
 cargo run --example kiosk     # a rule, a view, a failed run undone, save and replay
 cargo run --example engine    # a tiny engine: its own screen.print and ecs.now, a game loop
 cargo run --example door      # an AI through MCP: it sees its operations, proposes, a person confirms
+cargo run --example save      # save and load a game: run it twice, it goes on; "-- new" starts anew
+cargo build --example stdio   # an MCP server for a real AI client over stdio (see below)
 cargo test
 ```
 
@@ -155,6 +157,12 @@ the hash of the previous entry and its own hash (SHA-256). The entries form a ch
   overwritten: `store::archive` moves it aside.
 - Refusals and rollbacks are in the journal too, as entries that change nothing.
 
+**Saving and loading a game** is this and nothing more (`examples/save.rs`): after every
+move `Store::append` writes the new entries, and the hash of the last entry goes to a small
+file of its own; at start `store::load`, `World::replay`, a check of that hash and
+`Host::with_world`. The rules are in the journal too, so a saved game keeps the rules it was
+played with. A new game moves the old save aside with `store::archive`.
+
 ## The door for an AI (`src/mcp.rs`)
 
 MCP (Model Context Protocol) is the common way for an AI client to use the tools of a
@@ -175,10 +183,18 @@ usable alone:
   `lust_status`. The AI sees no values of the world: what it should know is the program's
   choice, as a tool of its own.
 
+**A real AI client over stdio** (`examples/stdio.rs`): a client such as Claude Desktop
+starts the program and talks to it one JSON message per line; stdout belongs to the
+protocol, what the person reads goes to stderr. The person needs a channel of their own
+that the AI does not have: in the example a text file of decisions (`yes 3`, `no 3`),
+kept where the AI cannot write (a client with file tools could otherwise decide for the
+person). A real program gives the person a window or a page instead. How to add it to the
+client is at the top of the example.
+
 **It is optional.** It is on by default. To build without it, depend on Lust with
 `default-features = false`. To remove it from the source: delete `src/mcp.rs` and
-`examples/door.rs`, the `mcp` lines in `src/lib.rs`, and the blocks `[features]` and
-`[[example]] door` in `Cargo.toml`. Nothing else in Lust uses it.
+`examples/door.rs` and `examples/stdio.rs`, the `mcp` lines in `src/lib.rs`, and the blocks `[features]`,
+`[[example]] door` and `[[example]] stdio` in `Cargo.toml`. Nothing else in Lust uses it.
 
 ## What Lust is not
 
