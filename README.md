@@ -20,7 +20,7 @@ adds its drawing and input, an ERP its documents and pages, a simulation its clo
 hard, shared part (the sandbox, the world, the rights, the journal, the AI) is already
 there.
 
-**Status: 0.1.0, young.** About 2500 lines, 34 tests. The API may still change.
+**Status: 0.1.0, young.** About 2700 lines, 36 tests. The API may still change.
 
 ## Try it
 
@@ -29,7 +29,7 @@ cargo run --example hello     # 30 lines: one type, one role, one operation, a j
 cargo run --example kiosk     # a rule, a view, a failed run undone, save and replay
 cargo run --example engine    # a tiny engine: its own screen.print and ecs.now, a game loop
 cargo run --example door      # an AI through MCP: it sees its operations, proposes, a person confirms
-cargo run --example save      # save and load a game: run it twice, it goes on; "-- new" starts anew
+cargo run --release --example save   # a game that computes: snapshots and journal volumes; run it again, it goes on
 cargo build --example stdio   # an MCP server for a real AI client over stdio (see below)
 cargo test
 ```
@@ -157,11 +157,23 @@ the hash of the previous entry and its own hash (SHA-256). The entries form a ch
   overwritten: `store::archive` moves it aside.
 - Refusals and rollbacks are in the journal too, as entries that change nothing.
 
-**Saving and loading a game** is this and nothing more (`examples/save.rs`): after every
-move `Store::append` writes the new entries, and the hash of the last entry goes to a small
-file of its own; at start `store::load`, `World::replay`, a check of that hash and
-`Host::with_world`. The rules are in the journal too, so a saved game keeps the rules it was
-played with. A new game moves the old save aside with `store::archive`.
+**Saving and loading a game** (`examples/save.rs`, 40 bodies pulling each other every
+tick). Loading a journal applies the values it holds, it does not compute them again; but a
+journal grows with every computed value for ever, and loading replays all of it. So a game
+that computes keeps two things:
+
+- a **snapshot**: the whole state at one entry (`World::snapshot`, `store::save_snapshot`),
+  with its own hash, so a snapshot changed by hand is refused;
+- a **journal volume**: the entries since that snapshot. They continue the same hash
+  chain. At each snapshot the old volume is moved aside (`store::archive`), so the history
+  is kept but is not needed to load.
+
+Loading is `store::load_snapshot`, `store::load` of the volume and
+`World::from_snapshot(snapshot, entries)`. The hash of the last entry kept in a file of its
+own shows a save cut or rewritten outside the game. The rules are in the world, so a saved
+game keeps the rules it was played with. What a program keeps outside the world (its own
+data in the Lua state, an engine's buffers) it saves itself; what should survive belongs in
+components.
 
 ## The door for an AI (`src/mcp.rs`)
 

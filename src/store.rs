@@ -1,9 +1,11 @@
 // the journal on disk: one json line per entry, appended after every operation.
 // at start the world is rebuilt from it (World::replay), so everything that was
 // done, edits of the developer included, survives a restart.
-// an old journal is never overwritten: --fresh moves it aside as an archive volume
+// an old journal is never overwritten: --fresh moves it aside as an archive volume.
+// a world that computes much keeps snapshots too (save_snapshot): the state at one entry,
+// after which a new volume of the journal begins (World::snapshot, World::from_snapshot)
 
-use crate::ecs::Entry;
+use crate::ecs::{Entry, Snapshot};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -52,7 +54,14 @@ pub fn archive(path: &Path) -> Result<Option<PathBuf>, String> {
     }
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("journal");
-    let to = path.with_file_name(format!("{}-{}.jsonl", stem, secs));
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("jsonl");
+    // never over an older archive: two volumes moved aside in one second get -2, -3, ...
+    let mut to = path.with_file_name(format!("{}-{}.{}", stem, secs, ext));
+    let mut n = 1;
+    while to.exists() {
+        n += 1;
+        to = path.with_file_name(format!("{}-{}-{}.{}", stem, secs, n, ext));
+    }
     fs::rename(path, &to).map_err(|e| format!("cannot move {} aside: {}", path.display(), e))?;
     Ok(Some(to))
 }
@@ -82,6 +91,24 @@ impl Store {
         f.sync_data().map_err(|e| format!("cannot sync {}: {}", self.path.display(), e))?;
         self.saved = journal.len();
         Ok(())
+    }
+}
+
+// a snapshot to a file: written next to it first and then renamed, so a cut write leaves
+// the snapshot before it whole
+pub fn save_snapshot(path: &Path, snap: &Snapshot) -> Result<(), String> {
+    let text = serde_json::to_string(snap).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, text).map_err(|e| format!("cannot write {}: {}", tmp.display(), e))?;
+    fs::rename(&tmp, path).map_err(|e| format!("cannot move {} to {}: {}", tmp.display(), path.display(), e))
+}
+
+// the snapshot of a file; None when there is none
+pub fn load_snapshot(path: &Path) -> Result<Option<Snapshot>, String> {
+    match fs::read_to_string(path) {
+        Ok(t) => serde_json::from_str(&t).map(Some).map_err(|e| format!("{}: {}", path.display(), e)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("cannot read {}: {}", path.display(), e)),
     }
 }
 
@@ -144,5 +171,23 @@ mod tests {
         assert!(!path.exists() && to.exists());
         assert!(load(&path).unwrap().is_none());
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn archives_never_overwrite_each_other() {
+        let dir = std::env::temp_dir().join(format!("lust-archive-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("game.snap.json");
+        let mut kept = Vec::new();
+        for i in 0..3 {
+            fs::write(&p, format!("{}", i)).unwrap();
+            kept.push(archive(&p).unwrap().unwrap());
+        }
+        for (i, k) in kept.iter().enumerate() {
+            assert_eq!(fs::read_to_string(k).unwrap(), format!("{}", i));
+            assert!(k.to_string_lossy().ends_with(".json"));
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -112,6 +112,10 @@ pub fn verify(journal: &[Entry], expected_head: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn clip_text(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
+}
+
 // an id: lower case letters, digits, _ and . (parts), - as in the names of mods (mods.saga-firm)
 pub fn valid_id(id: &str) -> bool {
     let mut chars = id.chars();
@@ -160,6 +164,43 @@ pub struct World {
     // read-only run, for example one screen of several drawn from one world; never
     // journaled, the world does not change
     pub overlay: Vec<(String, String, Option<String>)>,
+    // a world loaded from a snapshot holds only the entries after it: these say how many
+    // came before and the hash of the last of them, so the chain goes on unbroken
+    base_seq: u64,
+    base_head: String,
+}
+
+// the state of a world at one entry of its journal: every value, the number of entries so
+// far and the hash of the last one, so the journal after it continues the same chain. a
+// game that computes much saves this now and then and starts a new volume of its journal;
+// loading reads the snapshot and replays only the entries after it. state is the hash of
+// the rest, to find a snapshot changed by hand
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub format: String,
+    pub seq: u64,
+    pub head: String,
+    pub values: Vec<(String, String, String)>,
+    pub state: String,
+}
+
+pub const SNAPSHOT_FORMAT: &str = "lust-snapshot-1";
+
+fn snapshot_hash(seq: u64, head: &str, values: &[(String, String, String)]) -> String {
+    let mut h = Sha256::new();
+    h.update(SNAPSHOT_FORMAT.as_bytes());
+    h.update(seq.to_string().as_bytes());
+    h.update([0u8]);
+    h.update(head.as_bytes());
+    for (e, c, v) in values {
+        for part in [e, c, v] {
+            h.update([0u8]);
+            h.update(part.len().to_string().as_bytes());
+            h.update([0u8]);
+            h.update(part.as_bytes());
+        }
+    }
+    h.finalize().iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 // the types every world starts with. only the developer may change them;
@@ -190,6 +231,8 @@ impl World {
             hide_private: false,
             unlimited: false,
             overlay: Vec::new(),
+            base_seq: 0,
+            base_head: GENESIS.to_string(),
         }
     }
 
@@ -215,9 +258,14 @@ impl World {
     // put back as they are. a journal edited by hand breaks the chain and is refused
     pub fn replay(entries: Vec<Entry>) -> Result<World, String> {
         let mut w = World::empty();
+        w.apply_entries(entries)?;
+        Ok(w)
+    }
+
+    fn apply_entries(&mut self, entries: Vec<Entry>) -> Result<(), String> {
         for e in entries {
-            let seq = w.journal.len() as u64 + 1;
-            let prev = w.head();
+            let seq = self.seq() + 1;
+            let prev = self.head();
             if e.seq != seq || e.prev != prev || e.hash != entry_hash(&prev, seq, &e.role, &e.op, &e.entity, &e.comp, &e.value) {
                 return Err(format!("journal broken at entry {}", seq));
             }
@@ -226,11 +274,52 @@ impl World {
                     return Err(format!("journal entry {} names no entity", seq));
                 }
                 let v = if e.value.is_empty() { None } else { Some(e.value.as_str()) };
-                w.store(&e.entity, &e.comp, v);
+                self.store(&e.entity, &e.comp, v);
             }
-            w.journal.push(e);
-            w.undo.push(None);
+            self.journal.push(e);
+            self.undo.push(None);
         }
+        Ok(())
+    }
+
+    // how many entries the journal has had: those before a snapshot and those since
+    pub fn seq(&self) -> u64 {
+        self.base_seq + self.journal.len() as u64
+    }
+
+    // the state as it is now (see Snapshot)
+    pub fn snapshot(&self) -> Snapshot {
+        let mut values = Vec::with_capacity(self.values);
+        for (c, map) in &self.comps {
+            for (e, v) in map {
+                values.push((e.clone(), c.clone(), v.clone()));
+            }
+        }
+        let (seq, head) = (self.seq(), self.head());
+        let state = snapshot_hash(seq, &head, &values);
+        Snapshot { format: SNAPSHOT_FORMAT.to_string(), seq, head, values, state }
+    }
+
+    // the world of a snapshot and the entries written after it (the journal volume begun at
+    // the snapshot). the snapshot must be whole and the entries must continue its chain
+    pub fn from_snapshot(snap: &Snapshot, after: Vec<Entry>) -> Result<World, String> {
+        if snap.format != SNAPSHOT_FORMAT {
+            return Err(format!("not a snapshot of this kind: {}", clip_text(&snap.format, 40)));
+        }
+        if snapshot_hash(snap.seq, &snap.head, &snap.values) != snap.state {
+            return Err(String::from("the snapshot was changed: its state hash differs"));
+        }
+        let mut w = World::empty();
+        for (e, c, v) in &snap.values {
+            if !valid_id(e) || !valid_id(c) || v.is_empty() {
+                return Err(format!("the snapshot names no entity: {}.{}", clip_text(e, 40), clip_text(c, 40)));
+            }
+            w.store(e, c, Some(v));
+        }
+        w.reindex();
+        w.base_seq = snap.seq;
+        w.base_head = snap.head.clone();
+        w.apply_entries(after)?;
         Ok(w)
     }
 
@@ -253,12 +342,12 @@ impl World {
     pub fn head(&self) -> String {
         match self.journal.last() {
             Some(e) => e.hash.clone(),
-            None => GENESIS.to_string(),
+            None => self.base_head.clone(),
         }
     }
 
     fn push(&mut self, entity: &str, comp: &str, value: &str, undo: Option<Undo>) {
-        let seq = self.journal.len() as u64 + 1;
+        let seq = self.seq() + 1;
         let prev = self.head();
         let hash = entry_hash(&prev, seq, &self.current_role, &self.current_op, entity, comp, value);
         self.journal.push(Entry {
@@ -939,5 +1028,38 @@ mod tests {
         w.kill("b").unwrap();
         assert_eq!(index_refs(&w), scan_refs(&w));
         assert!(w.refs.get("a").is_none());
+    }
+
+    #[test]
+    fn a_snapshot_and_the_entries_after_it_give_the_same_world() {
+        let mut w = world();
+        w.current_role = String::from("dev");
+        w.set("stock", "kind", "int").unwrap();
+        w.set("stock", "write", "dev").unwrap();
+        w.set("tea", "stock", "5").unwrap();
+        let snap = w.snapshot();
+        let at = w.journal.len();
+        w.set("tea", "stock", "4").unwrap();
+        w.set("coffee", "stock", "2").unwrap();
+        let after: Vec<Entry> = w.journal[at..].to_vec();
+        let mut back = World::from_snapshot(&snap, after.clone()).unwrap();
+        assert_eq!(back.all_values(), w.all_values());
+        assert_eq!(back.head(), w.head());
+        assert_eq!(back.seq(), w.seq());
+        // it goes on: the next entry continues the same chain in both
+        back.current_role = String::from("dev");
+        w.set("tea", "stock", "3").unwrap();
+        back.set("tea", "stock", "3").unwrap();
+        assert_eq!(back.head(), w.head());
+        // a changed snapshot and entries that do not follow it are refused
+        let mut bad = snap.clone();
+        bad.values[0].2 = String::from("x");
+        assert!(World::from_snapshot(&bad, Vec::new()).err().unwrap_or_default().contains("changed"));
+        assert!(World::from_snapshot(&snap, after[1..].to_vec()).err().unwrap_or_default().contains("broken"));
+        // undo works after a snapshot too
+        let len = back.journal.len();
+        back.set("tea", "stock", "1").unwrap();
+        back.rollback(len, "test");
+        assert_eq!(back.value("tea", "stock"), Some("3"));
     }
 }
