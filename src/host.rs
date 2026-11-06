@@ -357,22 +357,6 @@ fn make_api(lua: &Lua, world: &Rc<RefCell<World>>, base: &Rc<RefCell<Vec<(String
     let w = Rc::clone(world);
     api.set("exists", lua.create_function(move |_, e: String| Ok(w.borrow().exists(&e)))?)?;
 
-    // ecs.seen() -> the pairs the host handed in (World.seen) as a list of {screen, arg}:
-    // in radost what the person sees now, one per part of the page
-    let w = Rc::clone(world);
-    api.set(
-        "seen",
-        lua.create_function(move |lua, ()| {
-            let list = lua.create_table()?;
-            for (i, (s, a)) in w.borrow().seen.iter().enumerate() {
-                let t = lua.create_table()?;
-                t.set("screen", s.as_str())?;
-                t.set("arg", a.as_str())?;
-                list.set(i + 1, t)?;
-            }
-            Ok(list)
-        })?,
-    )?;
 
     // ecs.comps(e) -> the names of its own components
     let w = Rc::clone(world);
@@ -493,6 +477,39 @@ impl Host {
             }
         }
         Ok(Host { lua, world, budget, base, refused: RefCell::new(None) })
+    }
+
+    // ---------- the program's own api: what a program built on lust adds to lua ----------
+    // a game engine adds its drawing and input, an erp its pages. what is added is seen by
+    // every later run; a table is copied fresh for each run, as the libraries are, so a
+    // script cannot leave anything in it. an added function that changes the world should
+    // do it through World::set, so the rights and the journal hold
+
+    // the lua state, to make the functions and tables to add (and to keep the program's data
+    // in it: Lua::set_app_data, read in a function with Lua::app_data_ref)
+    pub fn lua(&self) -> &Lua {
+        &self.lua
+    }
+
+    // a global under a new name (ecs and the libraries cannot be replaced)
+    pub fn add_global(&self, name: &str, value: Value) -> Result<(), String> {
+        let mut base = self.base.borrow_mut();
+        if name.is_empty() || base.iter().any(|(k, _)| k == name) {
+            return Err(format!("taken: {}", clip(name, 40)));
+        }
+        base.push((name.to_string(), value));
+        Ok(())
+    }
+
+    // a function in the table ecs under a new name
+    pub fn add_to_ecs(&self, name: &str, f: Function) -> Result<(), String> {
+        let base = self.base.borrow();
+        let ecs = base.iter().find(|(k, _)| k == "ecs").and_then(|(_, v)| v.as_table().cloned()).ok_or_else(|| String::from("no ecs table"))?;
+        let taken: Value = ecs.raw_get(name).map_err(|e| reason_of(&e))?;
+        if name.is_empty() || !taken.is_nil() {
+            return Err(format!("taken: ecs.{}", clip(name, 40)));
+        }
+        ecs.raw_set(name, f).map_err(|e| reason_of(&e))
     }
 
     // a fresh environment: copies of the base functions and fresh copies of the library tables
@@ -871,6 +888,23 @@ mod tests {
         assert!(parse_params("a:id a:id").is_err());
         assert!(parse_params("A:id").is_err());
         assert!(parse_params("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_program_adds_its_own_api() {
+        let h = host();
+        let twice = h.lua().create_function(|_, n: i64| Ok(n * 2)).unwrap();
+        h.add_to_ecs("twice", twice).unwrap();
+        let t = h.lua().create_table().unwrap();
+        t.set("name", "kiosk").unwrap();
+        h.add_global("app", Value::Table(t)).unwrap();
+        assert_eq!(h.probe("return tostring(ecs.twice(21)) .. ' ' .. app.name"), Ok("42 kiosk".to_string()));
+        // a run cannot change what the next run gets
+        assert_eq!(h.probe("app.name = 'x' ecs.twice = nil return 'ok'"), Ok("ok".to_string()));
+        assert_eq!(h.probe("return tostring(ecs.twice(1)) .. ' ' .. app.name"), Ok("2 kiosk".to_string()));
+        assert!(h.add_global("string", Value::Nil).is_err());
+        let f = h.lua().create_function(|_, ()| Ok(())).unwrap();
+        assert!(h.add_to_ecs("set", f).is_err());
     }
 
     #[test]

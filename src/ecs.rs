@@ -160,9 +160,6 @@ pub struct World {
     // read-only run, for example one screen of several drawn from one world; never
     // journaled, the world does not change
     pub overlay: Vec<(String, String, Option<String>)>,
-    // pairs the host hands to the code (ecs.seen), for example what a person sees now.
-    // not part of the world, not journaled
-    pub seen: Vec<(String, String)>,
 }
 
 // the types every world starts with. only the developer may change them;
@@ -193,7 +190,6 @@ impl World {
             hide_private: false,
             unlimited: false,
             overlay: Vec::new(),
-            seen: Vec::new(),
         }
     }
 

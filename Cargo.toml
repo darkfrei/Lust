@@ -2,7 +2,7 @@
 name = "lust"
 version = "0.1.0"
 edition = "2021"
-description = "Lust: Rust + Lua. An ECS world whose rules, operations and views are Lua code stored in the world itself, run in a sandbox with a time and memory budget, under roles with rights, every change in a hash-chained journal, and an optional door for an AI over MCP"
+description = "Lust: Rust + Lua + ECS + MCP. A base for programs whose logic is Lua: a sandbox with a time and memory budget, a native ECS world that holds the rules as data, roles with rights, a hash-chained journal, and a door for an AI over MCP"
 license = "MIT OR Apache-2.0"
 keywords = ["ecs", "lua", "sandbox", "journal", "mcp"]
 
