@@ -4,7 +4,7 @@
 
 English | [Русский](README.ru.md)
 
-Lust gives a program four things at once, already working together:
+Lust gives a program five things at once, already working together:
 
 - **Lua in a sandbox**, fast (Rust underneath) and safe: a script cannot touch files or the
   system, and has a time and memory budget.
@@ -16,13 +16,17 @@ Lust gives a program four things at once, already working together:
   or a turn-based game keeps much; an arcade game keeps nothing but a save.
 - **A door for an AI (MCP)**: an AI client sees what its role may do and proposes; only
   a person confirms.
+- **A program as a folder of Lua files** (`lust dev <folder>`): an AI builds a game or a
+  tool through MCP, writing Lua files only, never Rust. Every change is hot (the world keeps
+  its values, the new code runs from the next tick), and the person watches it in the
+  browser. See [docs/dev.md](docs/dev.md).
 
 On top of that, a program adds **its own Lua API**. A game engine in the spirit of LÖVE
 adds its drawing and input, an ERP its documents and pages, a simulation its clock. The
 hard, shared part (the sandbox, the worlds, the rights, the journal, the AI) is already
 there.
 
-**Status: 0.1.0, young.** About 4800 lines, 57 tests. The API may still change.
+**Status: 0.1.0, young.** About 7200 lines, 69 tests. The API may still change.
 
 ## Try it
 
@@ -37,6 +41,10 @@ cargo run --release --example battle     # a kingdom (ledger) and a world for ea
 cargo run --release --example frames     # how long a tick takes: mean, p99, the slowest
 cargo build --example stdio   # an MCP server for a real AI client over stdio (see below)
 cargo test
+
+cargo build --release                           # the program lust
+target/release/lust run examples/pong           # Pong, built by an AI through MCP: http://127.0.0.1:8730
+target/release/lust dev <folder>                # an MCP server: an AI builds in that folder
 ```
 
 ```rust
@@ -234,6 +242,18 @@ computing world read from the other when it was made; if that changed meanwhile,
 refused as stale. `examples/battle.rs`: a battle of about 1100 soldiers, 3308 ticks, 4 entries in
 the kingdom's journal.
 
+## A program as a folder (`lust dev`, `src/project.rs`)
+
+The program `lust` (`src/bin/lust.rs`) runs a folder of Lua files: `world.lua` (the start:
+types and entities), `sys/*.lua` (systems), `draw/*.lua` (drawing), `op/*.lua`
+(operations), `view/`, `rule/`, `lib/`, and `test/*.lua` (tests). `lust dev <folder>` is an
+MCP server over stdio: an AI reads one guide, writes and edits the files, tries code on a
+fresh world, runs the tests, and takes changes back. A change is hot: code that does not
+compile is refused, code that does replaces the old from the next tick, the values stay.
+The person sees the live world in the browser (`src/web.rs`, a module: another display can
+take its place). Pong built this way from an empty folder took 11 MCP messages and about
+3 000 tokens of content. All of it: [docs/dev.md](docs/dev.md).
+
 ## The door for an AI (`src/mcp.rs`)
 
 MCP (Model Context Protocol) is the common way for an AI client to use the tools of a
@@ -263,14 +283,17 @@ person). A real program gives the person a window or a page instead. How to add 
 client is at the top of the example.
 
 **It is optional.** It is on by default. To build without it, depend on Lust with
-`default-features = false`. To remove it from the source: delete `src/mcp.rs` and
-`examples/door.rs` and `examples/stdio.rs`, the `mcp` lines in `src/lib.rs`, and the blocks `[features]`,
-`[[example]] door` and `[[example]] stdio` in `Cargo.toml`. Nothing else in Lust uses it.
+`default-features = false`. To remove it from the source: delete `src/mcp.rs`, `src/dev.rs`,
+`src/bin/lust.rs`, `examples/door.rs` and `examples/stdio.rs`, the `mcp` lines in
+`src/lib.rs`, and the blocks `[features]`, `[[example]] door`, `[[example]] stdio` and
+`[[bin]] lust` in `Cargo.toml`. Nothing else in Lust uses it.
 
 ## What Lust is not
 
-Lust has no window, no graphics, no network and no pages: those belong to the program
-built on it, through its own API. It has no prompt format for an AI either.
+Lust has no window and no network beyond `127.0.0.1`. Its screen is a simple 2D frame
+(rectangles, circles, lines, text) shown by a page in the browser; a program that needs
+more (images, sound, a window, pages of an ERP) adds it through its own API or its own
+display module. It has no prompt format for an AI either.
 
 ## Built on Lust
 

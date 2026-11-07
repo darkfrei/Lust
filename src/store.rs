@@ -19,7 +19,10 @@ pub struct Store {
 // the entries of a journal file; None when there is no file or it is empty.
 // a last line without its newline is a write that was cut off (power loss):
 // it is left out and reported, every other bad line is an error
-pub fn load(path: &Path) -> Result<Option<(Vec<Entry>, Option<String>)>, String> {
+// the entries, and a warning when the last line was cut off
+pub type Loaded = (Vec<Entry>, Option<String>);
+
+pub fn load(path: &Path) -> Result<Option<Loaded>, String> {
     let text = match fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),

@@ -957,7 +957,7 @@ impl World {
         }
         match self.comps.get(c) {
             None => Vec::new(),
-            Some(m) => m.iter().filter(|(_, val)| v.map_or(true, |x| x == val.as_str())).map(|(e, _)| e.clone()).collect(),
+            Some(m) => m.iter().filter(|(_, val)| v.is_none_or(|x| x == val.as_str())).map(|(e, _)| e.clone()).collect(),
         }
     }
 
@@ -1744,7 +1744,7 @@ mod tests {
         w.kill("c").unwrap();
         w.kill("b").unwrap();
         assert_eq!(index_refs(&w), scan_refs(&w));
-        assert!(w.refs.get("a").is_none());
+        assert!(!w.refs.contains_key("a"));
     }
 
     #[test]

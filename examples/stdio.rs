@@ -49,7 +49,7 @@ fn apply_decisions(host: &Host, q: &mut Proposals, file: &str) {
     for line in text.lines() {
         let mut parts = line.split_whitespace();
         let (word, id) = (parts.next().unwrap_or(""), parts.next().and_then(|n| n.parse::<u64>().ok()));
-        let pending = id.map_or(false, |i| q.get(i).map_or(false, |p| p.status == Status::Pending));
+        let pending = id.is_some_and(|i| q.get(i).is_some_and(|p| p.status == Status::Pending));
         if pending && word == "yes" {
             let r = q.confirm(host, id.unwrap_or(0));
             eprintln!("kiosk: proposal {} confirmed: {:?}", id.unwrap_or(0), r);

@@ -13,8 +13,15 @@
 //   link     a result of one world as one operation of another
 //   clock    the clock of a game loop: a variable or a fixed dt
 //   store    the journal and snapshots on disk
+//   screen   what draw code draws (a frame as text) and the keys and mouse of the person
+//   project  a folder of lua files that makes a world; a change of a file is hot
+//   driver   lua that runs a world from outside: tries and tests of a project
 //   mcp      (optional) a door for an AI over the Model Context Protocol: it sees what its
 //            role may do and proposes; only the program, a person, confirms
+//   dev      (optional, with mcp) the door of a developer: an AI builds a program in one
+//            project folder, as lua files only
+//   web      (optional) a display in the browser on 127.0.0.1
+// the program lust (src/bin/lust.rs) runs a project folder: lust dev | run | test
 // a program adds its own lua api (Host::add_global, Host::add_to_ecs) and keeps its own
 // data in the lua state (mlua app data)
 
@@ -22,12 +29,19 @@
 pub use mlua;
 
 pub mod clock;
+pub mod driver;
 pub mod ecs;
 pub mod host;
 pub mod journal;
 pub mod link;
+pub mod project;
+pub mod screen;
 pub mod store;
 
 // leave it out with default-features = false, or delete src/mcp.rs and these two lines
 #[cfg(feature = "mcp")]
 pub mod mcp;
+#[cfg(feature = "mcp")]
+pub mod dev;
+#[cfg(feature = "web")]
+pub mod web;

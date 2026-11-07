@@ -2,16 +2,18 @@
 name = "lust"
 version = "0.1.0"
 edition = "2021"
-description = "Lust: Rust + Lua + ECS + MCP. A base for programs whose logic is Lua: a sandbox with a time and memory budget, native ECS worlds that hold the rules as data, each keeping what it needs (a hash-chained journal, roles with rights, undo, a Lua that remembers between ticks), and a door for an AI over MCP"
+description = "Lust: Rust + Lua + ECS + MCP. A base for programs whose logic is Lua: a sandbox with a time and memory budget, native ECS worlds that hold the rules as data, each keeping what it needs (a hash-chained journal, roles with rights, undo, a Lua that remembers between ticks), and a door for an AI over MCP; the program lust runs a folder of lua files that an AI builds over MCP, hot"
 license = "MIT OR Apache-2.0"
 keywords = ["ecs", "lua", "sandbox", "journal", "mcp"]
 
 # mcp: the door for an AI (src/mcp.rs, examples/door.rs). on unless default-features = false.
 # to remove it: delete those two files, the mcp lines in src/lib.rs, this block and the
 # block [[example]] door at the end
+# web: a display in the browser (src/web.rs), std only. lust dev and lust run need both
 [features]
-default = ["mcp"]
+default = ["mcp", "web"]
 mcp = []
+web = []
 
 [dependencies]
 mlua = { version = "0.12", features = ["lua54", "vendored", "serialize"] }
@@ -28,3 +30,9 @@ required-features = ["mcp"]
 [[example]]
 name = "stdio"
 required-features = ["mcp"]
+
+# the program that runs a project folder: lust dev | run | test <folder>
+[[bin]]
+name = "lust"
+path = "src/bin/lust.rs"
+required-features = ["mcp", "web"]

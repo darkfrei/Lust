@@ -48,6 +48,36 @@ pub fn reason_of(e: &mlua::Error) -> String {
     }
 }
 
+// where in lua an error of a rust function (ecs.set with a bad argument) was raised: the
+// traceback knows the chunk and the line, the message does not
+pub fn where_of(e: &mlua::Error) -> Option<String> {
+    match e {
+        mlua::Error::CallbackError { traceback, cause } => {
+            for line in traceback.lines() {
+                if let Some(rest) = line.trim().strip_prefix("[string \"") {
+                    if let Some(end) = rest.find("\"]:") {
+                        let digits: String = rest[end + 3..].chars().take_while(|c| c.is_ascii_digit()).collect();
+                        if !digits.is_empty() {
+                            return Some(format!("[string \"{}\"]:{}", &rest[..end], digits));
+                        }
+                    }
+                }
+            }
+            where_of(cause)
+        }
+        _ => None,
+    }
+}
+
+// the reason with the place in lua when the message lacks it
+pub fn reason_at(e: &mlua::Error) -> String {
+    let r = reason_of(e);
+    match where_of(e) {
+        Some(w) if !r.contains(&w) => format!("{}: {}", w, r),
+        _ => r,
+    }
+}
+
 // the limits of one run: instructions left and the moment the run must end. the time a
 // run may take is set from the settings (limits.run_ms); the instructions grow with it
 // (a million for every 250 ms)
@@ -1412,7 +1442,7 @@ impl Host {
             };
             self.budget.arm();
             if let Err(e) = f.call::<()>(dt) {
-                r = Err(format!("{}: {}", s, reason_of(&e)));
+                r = Err(format!("{}: {}", s, reason_at(&e)));
                 break;
             }
         }
