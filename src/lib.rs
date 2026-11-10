@@ -14,7 +14,9 @@
 //   clock    the clock of a game loop: a variable or a fixed dt
 //   store    the journal and snapshots on disk
 //   screen   what draw code draws (a frame as text) and the keys and mouse of the person
-//   project  a folder of lua files that makes a world; a change of a file is hot
+//   project  a folder of lua files that makes a world; a change of a file is hot; every
+//            project has lib.ui (buttons, menus, labels) built in
+//   launcher the list of games `lust` shows when it is started with a double click
 //   driver   lua that runs a world from outside: tries and tests of a project
 //   mcp      (optional) a door for an AI over the Model Context Protocol: it sees what its
 //            role may do and proposes; only the program, a person, confirms
@@ -33,8 +35,11 @@ pub mod driver;
 pub mod ecs;
 pub mod host;
 pub mod journal;
+pub mod launcher;
+pub mod pack;
 pub mod link;
 pub mod project;
+pub mod saves;
 pub mod screen;
 pub mod store;
 

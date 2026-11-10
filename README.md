@@ -26,7 +26,9 @@ adds its drawing and input, an ERP its documents and pages, a simulation its clo
 hard, shared part (the sandbox, the worlds, the rights, the journal, the AI) is already
 there.
 
-**Status: 0.1.0, young.** About 7200 lines, 69 tests. The API may still change.
+**Status: 0.1.0, young.** About 8000 lines, 86 tests. The API may still change.
+
+The plan (saves, images, sound, network): [docs/roadmap.md](docs/roadmap.md).
 
 ## Try it
 
@@ -43,6 +45,7 @@ cargo build --example stdio   # an MCP server for a real AI client over stdio (s
 cargo test
 
 cargo build --release                           # the program lust
+target/release/lust                             # a double click: the games next to it as buttons in the browser
 target/release/lust run examples/pong           # Pong, built by an AI through MCP: http://127.0.0.1:8730
 target/release/lust dev <folder>                # an MCP server: an AI builds in that folder
 ```

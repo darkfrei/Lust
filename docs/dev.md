@@ -132,8 +132,61 @@ text 330 20 40 #fff 3
 ```
 
 Lua draws with `gfx.size/clear/rect/circle/line/text` (only in `draw/` files) and reads
-`input.down(key)`, `input.pressed(key)`, `input.mouse()`. A display shows the frame and
+`input.down(key)`, `input.pressed(key)`, `input.mouse()`, `input.mic()` (the loudness of the microphone, 0 to 1; a draw file asks for it with `gfx.mic(true)`; the browser asks the person and shows that it is on; only the number reaches the world). A display shows the frame and
 gives back the input through an `Exchange` (a mutex, no Lua in it).
+
+`gfx.measure(text, size)` gives the width and height of a text, anywhere (also in `sys/`).
+The browser reports the width of its monospace letters (`cw=`), so the answer is what you
+see. Every project also has `lib.ui` built in (`local ui = ecs.call('lib.ui')`): buttons
+that know their `w` and `h`, labels, panels, `stack`/`row` placing, `menu`, `update_menu`
+(keys, mouse, enter), `paragraph` (wraps text to a width). `examples/menu` is a template for
+a game with a menu, play, options and about screens.
+
+## Saves (`src/saves.rs`)
+
+`ecs.save(slot)` and `ecs.load(slot)` act after the tick (a load gives `false` when there is
+no such slot); `ecs.slots()` lists them, `ecs.erase(slot)` removes one. A slot is 1 to 32 of
+`a-z 0-9 _ -`, at most 20 slots, 4 MB each. Only the data is saved: the code and the types
+come from the files, so changing the code never breaks a save. A load is checked against
+the types of the game and refused, with the reason on the status line, when a type is gone
+or has another kind. The saves are in the folder of the user's data (`%APPDATA%\lust\<game>`
+on Windows, `~/.local/share/lust/<game>` elsewhere), named after the game folder; a packed
+game carries that name. Tests and `lust_try` keep saves in memory. `examples/menu` saves its
+score and options.
+
+## Events and the end of a game (`src/screen.rs`)
+
+A frame may be missed or taken twice; a sound or the end of the game must happen exactly
+once. So the world has a second way to the display: events. Code of a tick makes one
+(`ecs.quit()` now, sounds later; at most 16 a tick, never from a `draw/` file). The program
+numbers them and keeps the last 64 for 5 s. The page sends the number of the last event it has
+(`ack=`) with every request and gets the events after it; a new page (`ack=new`) gets none.
+`ecs.quit()` ends the program once the page has heard it (or after 1 s); the page says that
+the game has ended. In `lust dev` the world only pauses, so the AI can go on. In a test,
+`events()` gives what the world told the display since the last call.
+
+## When the page is closed
+
+`lust run` and a double click pause the game while no page shows it (a hidden tab, or before
+the browser opened) and end when the page is closed (3 s later, so a reload is not an end)
+or when no page was heard of for 3 minutes. `lust dev` keeps running: its AI client ends it.
+A game that draws nothing shows what to do instead of a black page.
+
+## A game as one file (`lust_pack`, `src/pack.rs`)
+
+When the game is ready, the AI calls `lust_pack` (or you run `lust pack <folder>`): it makes
+`<folder>/dist/<folder name>` (`.exe` on Windows), the program lust with the lua files of
+the folder glued to its end. A double click on that file opens the game on its own menu:
+no command line, no list of games, no second file. At the start the file unpacks its lua
+files into the temp directory and runs them; the console window of the double click closes.
+The size is about 3 MB plus the files. It is the same lust, so a game needs no Rust.
+
+## Starting without a command line
+
+Double click `lust`: it shows the games next to it (folders with a `world.lua`, in the
+folder `games` beside `lust`) as buttons in the browser. A click starts one, F1 comes back
+to the list. Drop a game folder onto `lust.exe` to run just that game. With a `world.lua`
+beside `lust`, it runs that folder.
 
 `web.rs` is one such display: a page on `127.0.0.1` with a canvas. It has no dependencies
 (std only), answers only requests whose `Host` is `127.0.0.1` or `localhost` (so a web page

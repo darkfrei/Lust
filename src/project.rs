@@ -32,6 +32,10 @@ const HISTORY_DIR: &str = ".lust/history";
 pub const CODE_DIRS: &[(&str, Option<&str>)] = &[("sys", Some("tick")), ("draw", Some("draw")), ("rule", Some("system")), ("op", None), ("view", None), ("lib", None)];
 pub const TEST_DIR: &str = "test";
 
+// code every project world has, as entities, unless the project has a file of the same
+// name: lib.ui (src/lua/ui.lua)
+pub const BUILTIN: &[(&str, &str)] = &[("lib.ui", include_str!("lua/ui.lua"))];
+
 // the types every project world has, besides the genesis types of a world
 const PROJECT_TYPES: &[(&str, &str)] = &[("src", "code"), ("tick", "bool"), ("draw", "bool"), ("system", "bool"), ("params", "text"), ("roles", "names")];
 
@@ -205,6 +209,8 @@ pub fn parse_world(src: &str) -> Result<Desc, String> {
 pub struct App {
     pub host: Rc<Host>,
     pub screen: Rc<Screen>,
+    // ecs.save and ecs.load (saves.rs); in memory until a session gives it a folder
+    pub saves: Rc<crate::saves::Saves>,
     pub files: BTreeMap<String, String>,
 }
 
@@ -231,6 +237,7 @@ impl App {
         *self.screen.input.borrow_mut() = input;
         let t = self.host.tick(dt).map_err(|e| self.explain(&e));
         screen::after_tick(&self.screen);
+        crate::saves::after_tick(&self.host, &self.saves);
         let d = screen::draw(&self.host, &self.screen).map_err(|e| self.explain(&e));
         (t, d)
     }
@@ -336,7 +343,15 @@ pub fn uninstall(host: &Host, path: &str) {
     if let Some((entity, flag)) = entity_of(path) {
         as_core(host, |w| {
             if w.own(&entity, "src").is_some() {
-                let _ = w.del(&entity, "src");
+                // the built-in code comes back when the project's own file is gone
+                match BUILTIN.iter().find(|(e, _)| *e == entity) {
+                    Some((_, src)) => {
+                        let _ = w.set(&entity, "src", src);
+                    }
+                    None => {
+                        let _ = w.del(&entity, "src");
+                    }
+                }
             }
             if let Some(f) = flag {
                 if w.own(&entity, f).is_some() {
@@ -360,6 +375,7 @@ pub fn build(files: &BTreeMap<String, String>) -> Result<(App, Desc, Vec<String>
     };
     let host = Host::with_spec(desc.spec.clone()).map_err(|e| reason_of(&e))?;
     let screen = screen::attach(&host)?;
+    let saves = crate::saves::attach(&host)?;
     if let Some(ms) = desc.run_ms {
         host.budget.set_run_ms(ms);
     }
@@ -375,12 +391,19 @@ pub fn build(files: &BTreeMap<String, String>) -> Result<(App, Desc, Vec<String>
         spawn_all(w, &desc.spawn, &mut out);
     });
     let names = code_files(files);
+    for (entity, src) in BUILTIN {
+        if !names.contains_key(*entity) {
+            if let Err(e) = as_core(&host, |w| w.set(entity, "src", src)) {
+                out.push(format!("{}: {}", entity, e));
+            }
+        }
+    }
     for (path, src) in files {
         if let Err(e) = install(&host, &names, path, src) {
             out.push(e);
         }
     }
-    Ok((App { host: Rc::new(host), screen, files: names }, desc, out))
+    Ok((App { host: Rc::new(host), screen, saves, files: names }, desc, out))
 }
 
 // ---------- the folder ----------
@@ -670,7 +693,14 @@ impl Session {
                 (app, vec![e])
             }
         };
-        Ok(Session { project, app, paused: None, problems, url: None })
+        let s = Session { project, app, paused: None, problems, url: None };
+        s.wire();
+        Ok(s)
+    }
+
+    // the saves of the live world go to the folder of the user's data for this game
+    fn wire(&self) {
+        self.app.saves.set_dir(crate::saves::dir_for(&crate::saves::id_of(&self.project.root)));
     }
 
     // the world again from the files
@@ -678,6 +708,7 @@ impl Session {
         match self.project.build() {
             Ok((app, problems)) => {
                 self.app = app;
+                self.wire();
                 self.paused = None;
                 self.problems = problems;
             }
@@ -712,6 +743,11 @@ impl Session {
         let (t, d) = self.app.frame(dt, input);
         if let Err(e) = t {
             self.paused = Some(format!("tick {}: {}", self.app.host.ticks(), e));
+        }
+        // a save that failed does not stop the game; it is told on the status line
+        let failed = self.app.saves.take_errors();
+        if !failed.is_empty() {
+            self.problems = failed;
         }
         match d {
             Ok(f) => f,

@@ -19,7 +19,7 @@ use crate::project::{entity_of, parse_world, Session, FILE_MAX};
 use crate::screen;
 use serde_json::{json, Value};
 
-pub const GUIDE: &str = r#"LUST: you build a program in one folder of lua files. You change only these files, through these tools; the live world takes each change at once and keeps its values (the new code runs from the next tick). lust_restart starts the world again from world.lua.
+pub const GUIDE: &str = r#"LUST: you build a program in one folder of lua files. You change only these files, through these tools; the live world takes each change at once and keeps its values (the new code runs from the next tick). lust_restart starts the world again from world.lua. When the game is ready, lust_pack makes it one file (dist/<folder>) that a person double clicks: it opens at once on the menu you built, no command line.
 
 FILES (<n> is [a-z0-9_])
 world.lua     the start of the world (see WORLD)
@@ -59,17 +59,38 @@ fast, all entities at once (num components): ecs.query(c1, c2, ...) -> n, ids, v
 ecs.call(entity, arg) -> what that entity's function returns
 input.down(key)  input.pressed(key) (went down this tick)  input.mouse() -> x, y, down
   keys: up down left right space enter escape shift ctrl alt tab backspace a-z 0-9 mouse
+SAVES: ecs.save(slot) and ecs.load(slot) (after this tick; load gives false when there is no such slot), ecs.slots() -> names, ecs.erase(slot). slot: 1..32 of a-z 0-9 _ -, at most 20. Only data is saved, not code; a load is refused when a type is gone or has another kind (said on the status line). In tests and lust_try the saves are in memory; the live game keeps them in the user's data folder, so they stay between starts.
+input.mic() -> how loud the microphone hears, 0 to 1. Call gfx.mic(true) in a draw file to ask for it: the browser asks the person and shows 'microphone on'; only the loudness reaches the world, never the sound. Driver: mic(level).
 gfx, only in draw files: gfx.size(w, h) (the screen in your units, default 800 600; y grows down)
   gfx.clear(color)  gfx.rect(x, y, w, h, color)  gfx.circle(x, y, r, color)
   gfx.line(x1, y1, x2, y2, width, color)  gfx.text(x, y, size, color, text)
   color: '#rgb', '#rrggbb' or a css name
+  gfx.measure(text, size) -> w, h  (anywhere, also in sys files): the box of a text; a widget knows its size
+UI (built into every project): local ui = ecs.call('lib.ui')
+  ui.button(text, x, y, {w, h, size, pad, enabled, id}) -> b with b.x b.y b.w b.h (as big as its text needs)
+  ui.hover(b)  ui.down(b)  ui.clicked(b)  ui.inside(b, px, py)  ui.draw(b, focused) (draw files)
+  ui.label(text, x, y, {align = 'left'|'center'|'right', size, color}) -> w, h   ui.panel(x, y, w, h)   ui.paragraph(text, x, y, w, opts) (wraps to w)
+  ui.theme: text, dim, back, button, hover, border, focus (colors), size, pad. Text may be in any language (utf-8).
+  ui.menu({'Play', 'Options'}, cx, top, {size, gap}) -> list of buttons, centered, one width, stacked
+  ui.update_menu(list, sel, {wrap}) -> sel, chosen index or nil, edge (in a sys file)  ui.draw_menu(list, sel)
+  ui.stack / ui.row(list, cx, top, gap) place widgets.
+  A game with screens (menu, play, ...): one number app.screen in world.lua; lib/layout.lua builds the buttons
+  (return function() return M end, M.menu() = ui.menu({...}, 400, 330, {size = 32, gap = 16})); sys/screens.lua
+  does `local sel, chosen = ui.update_menu(layout.menu(), ecs.get('app', 'sel'))`, ecs.set the sel, and on
+  `chosen == 1` sets app.screen; draw/screens.lua branches on app.screen and calls ui.draw_menu(layout.menu(), sel).
+  Escape: input.pressed('escape'). ecs.quit() ends the game (an Exit button; the window closes; in lust dev the world only pauses).
+  Build the same widgets in the sys file (clicks) and in the draw file (drawing); draw files cannot write.
+  Text is measured as monospace, the width the browser reports. F1 in a game from the lust list goes back to the list.
 lua: string, table, math, utf8. No io, os, require, pcall, string patterns (string.find_plain(s, sub) instead). error('msg', 0) fails a run. Each run has a time and memory budget.
+Numbers of num components are floats: 'Score: ' .. n shows 3.0; write string.format('%d', n) for a whole number (gfx.text(x, y, size, color, n) shows 3).
 Speed: ecs.get/ecs.set cost about 0.1 us a call; for thousands of entities use query/write/add.
 
 DRIVER (lust_try, test files; lua of its own)
 step([n [, dt]]) n ticks (1, dt 1/60)   get(e, c)   set(e, c, v)   ents(c)   tick()
-keys(k, ...) held from now on (keys() lets go)   press(k) down on the next tick   mouse(x, y, down)
-draw() -> the frame as text lines   run(role, op, {k = v})   view(name [, arg])   ms()
+keys(k, ...) held from now on (keys() lets go)   press(k) down on the next tick
+mouse(x, y, down): the button going down is a click (input.pressed('mouse')). A click: mouse(x, y, true) step() mouse(x, y, false) step()
+The driver has no ecs, input, gfx: it looks at the world from outside with get/set/draw.
+draw() -> the frame as text lines   events() -> what the world told the display since the last call, e.g. {'quit'}   run(role, op, {k = v})   view(name [, arg])   ms()
 print(...) and returned values are the answer (numbers 4 decimals).
 
 TOOLS
@@ -281,7 +302,8 @@ impl Tools for DevTools<'_> {
             ),
             tool("lust_delete", "Delete a file.", json!({"type": "object", "properties": {"path": path}, "required": ["path"]}), false),
             tool("lust_undo", "Take the last n changes of files back (1).", json!({"type": "object", "properties": {"n": {"type": "integer"}}}), false),
-            tool("lust_restart", "The live world again from world.lua.", none, false),
+            tool("lust_restart", "The live world again from world.lua.", none.clone(), false),
+            tool("lust_pack", "Make the game one file a person double clicks (dist/<folder name>, .exe on Windows); it opens on the menu of the game. Do it when the game is ready.", none, false),
             tool(
                 "lust_try",
                 "Run driver code (see the guide) on a fresh world, or on the live one with live = true; answers what it printed and returned.",
@@ -323,6 +345,14 @@ impl Tools for DevTools<'_> {
             "lust_restart" => {
                 let problems = self.s.restart();
                 Ok(if problems.is_empty() { String::from("restarted") } else { format!("restarted with problems:\n{}", problems.join("\n")) })
+            }
+            "lust_pack" => {
+                if !self.s.problems.is_empty() {
+                    return Err(format!("not packed, the game has problems:\n{}", self.s.problems.join("\n")));
+                }
+                let program = std::env::current_exe().map_err(|e| e.to_string())?;
+                let (to, size) = crate::pack::pack(&self.s.project.root, &program)?;
+                Ok(format!("packed {} ({} KB); double click it", to.display(), size / 1024))
             }
             "lust_try" => self.try_code(args),
             "lust_test" => self.test(args),
