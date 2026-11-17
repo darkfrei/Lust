@@ -65,6 +65,9 @@ return function()
       gfx.rect(ax[i] - 6, ay[i] - 6, 12, 12, '#fa3')
     elseif al[i] == 16 then
       gfx.circle(ax[i], ay[i], ar[i], '#f66')
+    elseif ecs.get(ids[i], 'broken') == 1 then
+      -- the new end of a broken half: half the size of a joint, dark brown
+      gfx.circle(ax[i], ay[i], 2, '#5a3a1e')
     else
       gfx.circle(ax[i], ay[i], 4, '#9cf')
     end

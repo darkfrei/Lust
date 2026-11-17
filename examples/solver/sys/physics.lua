@@ -13,7 +13,7 @@ local DENS = 1.0
 local JOINT0 = 1.0
 -- the pieces of a broken part end in a new small joint: radius is half the width of a beam (the
 -- road is drawn 5 px wide), and how much speed it keeps per substep
-local DEBRIS_R = 2.5
+local DEBRIS_R = 1.25
 local DEBRIS_DAMP = 0.995
 -- the start of the scene is a shock (a straight, taut road and cable begin to hang, forces of
 -- 10^7 and more in the first ticks), so nothing is judged before this many ticks after the level was built
@@ -97,7 +97,7 @@ local function break_part(id)
   for _, end_id in ipairs({a, b}) do
     local p = ecs.spawn({x = mx, y = my, old_x = mx - vx, old_y = my - vy, inv_mass = 1 / m0,
       radius = DEBRIS_R, layer = 8, mask = 1, contact = 0, contact_nx = 0, contact_ny = 0,
-      damping = DEBRIS_DAMP, mass0 = m0})
+      damping = DEBRIS_DAMP, mass0 = m0, broken = 1})
     local c = {node_a = end_id, node_b = p, rest_len = rest, compliance = 0, lambda = 0,
       force_max = 0}
     if rope then
