@@ -11,12 +11,12 @@ local BEAM = 40.5
 -- attached to it (remass), never typed in
 local DENS = 1.0
 local JOINT0 = 1.0
--- the pieces of a broken part end in a new small joint: radius, and how much speed it keeps
--- (a little more loss than the bridge joints, so the halves do not spin like helicopters)
-local DEBRIS_R = BEAM / 4
-local DEBRIS_DAMP = 0.97
+-- the pieces of a broken part end in a new small joint: radius is half the width of a beam (the
+-- road is drawn 5 px wide), and how much speed it keeps per substep
+local DEBRIS_R = 2.5
+local DEBRIS_DAMP = 0.995
 -- the start of the scene is a shock (a straight, taut road and cable begin to hang, forces of
--- 10^7 and more in the first ticks), so nothing is judged before this many ticks
+-- 10^7 and more in the first ticks), so nothing is judged before this many ticks after the level was built
 local WARMUP = 30
 -- a free joint farther than this from the world is removed with its links
 local WORLD = {x0 = -200, x1 = 1000, y1 = 900}
@@ -58,9 +58,9 @@ local function cable(name, a, b, rest, strength)
   ecs.set(name, 'tension', 0)
 end
 
--- every beam has a strength of its own: 1.0 to 1.4 million, a different one each
+-- every beam has a strength of its own: 4.0 to 5.6 million, a different one each
 local function beam_strength(i)
-  return 1000000 + 100000 * ((i * 7) % 5)
+  return 4000000 + 400000 * ((i * 7) % 5)
 end
 
 -- the mass of every free joint = its own mass0 + half the weight (length * linear_density) of
@@ -124,9 +124,23 @@ local function judge()
   local m, tids, _, t = ecs.query('strength', 'tension')
   local tension = {}
   for i = 1, m do tension[tids[i]] = t[i] end
+  -- only the part with the biggest load against its strength is marked: when one link of a chain
+  -- goes, the shock overloads its neighbours for a moment, and they must not all go with it
+  local worst, ratio = nil, 1
   for i = 1, n do
-    if math.max(f[i], tension[ids[i]] or 0) > str[i] then ecs.set(ids[i], 'doomed', 1) end
+    local r = math.max(f[i], tension[ids[i]] or 0) / str[i]
+    if r > ratio then worst, ratio = ids[i], r end
   end
+  if worst then ecs.set(worst, 'doomed', 1) end
+end
+
+-- restart: every point and link goes, build makes the level again on the next tick
+local function restart()
+  local n, ids = ecs.query('node_a')
+  for i = 1, n do ecs.kill(ids[i]) end
+  n, ids = ecs.query('x', 'y')
+  for i = 1, n do ecs.kill(ids[i]) end
+  ecs.set('app', 'ready', 0)
 end
 
 -- free joints outside the world are removed with the links on them
@@ -164,16 +178,17 @@ local function build()
   point('cable_l', 100, 100, 0, 0, 1, 1)
   point('cable_r', 500, 100, 0, 0, 1, 1)
   point('hang', 300, 190, 0.1, 3, 8, 1, 0.996)
-  cable('cable_a', 'cable_l', 'hang', 220, 2000000)
-  cable('cable_b', 'hang', 'cable_r', 220, 1900000)
+  cable('cable_a', 'cable_l', 'hang', 220, 8000000)
+  cable('cable_b', 'hang', 'cable_r', 220, 7600000)
   -- the only hanger: a rope (it sags when slack, it never pushes) from the cable joint to the
   -- middle of the road. a strut (mode 2) would be the one that gets compressed
-  cable('hanger', 'hang', 'joint_5', 110, 1600000)
+  cable('hanger', 'hang', 'joint_5', 110, 6400000)
   -- the wheel and the mouse: a soft spring of length 0 pulls the wheel to the mouse
   point('wheel', 200, 250, 0.02, 12, 16, 23, 0.984)
   point('mouse', 200, 250, 0, 0, 32, 0)
   link('drag', 'mouse', 'wheel', 0, 0.00002, 0, nil)
   remass()
+  ecs.set('app', 'born', ecs.tick())
   ecs.set('app', 'ready', 1)
 end
 
@@ -186,6 +201,7 @@ local function substep(h)
 end
 
 return function(dt)
+  if input.pressed('r') then restart() end
   if ecs.get('app', 'ready') ~= 1 then build() end
   -- the mouse marker sits where the pointer is (before the first move the pointer reads 0, 0:
   -- then the marker stays where it was)
@@ -198,6 +214,6 @@ return function(dt)
   ecs.fill('force_max', 0)
   for i = 1, 16 do substep(dt / 16) end
   ecs.update_catenary(980)
-  if ecs.tick() > WARMUP then judge() end
+  if ecs.tick() - ecs.get('app', 'born') > WARMUP then judge() end
   sweep()
 end

@@ -77,4 +77,5 @@ return function()
     gfx.rect(20 + i * 14, 566, 14, 10, string.format('#%02x%02x%02x', math.floor(red * 255), math.floor(green * 255), math.floor(blue * 255)))
   end
   gfx.text(20, 552, 12, '#aab', 'load / strength: 0 ... 100 %')
+  gfx.text(640, 582, 12, '#aab', 'R: restart')
 end
