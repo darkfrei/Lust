@@ -3,6 +3,9 @@
 -- the road, and a wheel that follows the mouse (a spring to a fixed point that sits at the
 -- mouse). 16 substeps of one pass each
 local N = 9
+-- the road is a chain: its links are ropes (mode 1), they hold a pull and carry no push, so the
+-- road cannot act as an arch. 10 links of 40.5 are 5 longer than the 400 between the fixings
+local BEAM = 40.5
 
 -- a point: x y old_x old_y inv_mass radius layer mask (w = 0 is fixed: a rigid fixing).
 -- damping is the share of speed a point keeps per substep (nil: the call's 0.999). joints keep
@@ -34,17 +37,17 @@ local function cable(name, a, b, rest)
 end
 
 local function build()
-  -- the road: fixed at both ends, 10 links of 40
+  -- the road: fixed at both ends, 10 links of 40.5
   point('road_l', 100, 300, 0, 0, 1, 1)
   point('road_r', 500, 300, 0, 0, 1, 1)
   local prev = 'road_l'
   for i = 1, N do
     -- the road joints are 4 times heavier than the cable joint: mass 40, inv_mass 0.025
     point('joint_' .. i, 100 + i * 40, 300, 0.025, 3, 8, 1, 0.996)
-    link('beam_' .. i, prev, 'joint_' .. i, 40, 0, 0, 4)
+    link('beam_' .. i, prev, 'joint_' .. i, BEAM, 0, 1, 4)
     prev = 'joint_' .. i
   end
-  link('beam_' .. (N + 1), prev, 'road_r', 40, 0, 0, 4)
+  link('beam_' .. (N + 1), prev, 'road_r', BEAM, 0, 1, 4)
   -- the cable: fixed at both ends, one free joint in the middle
   point('cable_l', 100, 100, 0, 0, 1, 1)
   point('cable_r', 500, 100, 0, 0, 1, 1)

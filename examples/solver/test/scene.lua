@@ -22,3 +22,7 @@ assert(math.abs(get('wheel', 'x') - 150) < 15, 'the wheel did not come back: x '
 assert(get('hanger', 'sag') ~= nil, 'the hanger is not a cable')
 -- joints and the wheel lose speed faster than the call's default (own damping columns)
 assert(get('joint_3', 'damping') == 0.996 and get('wheel', 'damping') == 0.984, 'damping columns')
+-- the road is a chain of ropes: no link carries a push (mode 1), the road sags between the fixings
+assert(get('beam_1', 'mode') == 1, 'a road link is not a rope')
+assert(get('joint_2', 'y') > 305, 'the road does not sag: ' .. get('joint_2', 'y'))
+assert(get('joint_5', 'y') < get('joint_2', 'y'), 'the hanger does not lift the middle')

@@ -386,4 +386,27 @@ mod tests {
         assert!((fa.0 - ga.0).abs() < 1e-9 && (fa.1 + ga.1).abs() < 1e-9);
         assert!((fb.0 - gb.0).abs() < 1e-9 && (fb.1 + gb.1).abs() < 1e-9);
     }
+
+    // a cable pulls its ends toward each other and toward the way gravity points; it never
+    // pushes them apart or against gravity, for every slack, height and gravity sign
+    #[test]
+    fn a_cable_only_pulls_never_pushes() {
+        for gy in [980.0, -980.0] {
+            for dy in [-80.0, 0.0, 60.0] {
+                for k in [1.0005, 1.01, 1.1, 1.5, 3.0] {
+                    let chord = (200.0f64 * 200.0 + dy * dy).sqrt();
+                    let len = chord * k;
+                    for ends in [[0.0, 0.0, 200.0, dy], [200.0, dy, 0.0, 0.0]] {
+                        let sh = shape(ends, len, gy);
+                        let (fa, fb) = end_forces(&sh, ends, len, 0.5, gy);
+                        // toward each other along x
+                        let (left, right) = if ends[0] < ends[2] { (fa, fb) } else { (fb, fa) };
+                        assert!(left.0 >= 0.0 && right.0 <= 0.0, "pushes apart: gy {} dy {} k {} {:?} {:?}", gy, dy, k, fa, fb);
+                        // the weight of the cable pulls the ends with gravity, in total
+                        assert!((fa.1 + fb.1) * gy >= 0.0, "total vertical against gravity: gy {} dy {} k {}", gy, dy, k);
+                    }
+                }
+            }
+        }
+    }
 }
