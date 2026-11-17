@@ -13,11 +13,22 @@ return function()
     local xb, yb = ecs.get(eb, 'x'), ecs.get(eb, 'y')
     if xa and xb then
       if ecs.get(lids[i], 'catenary_a') then
-        local px, py = xa, ya
+        -- a rope: the curve of ecs.sample_catenary. a slack rope hanging straight down folds on
+        -- itself (the shape goes down and comes back up along one line); to be seen the way
+        -- back is drawn 5 px to the right (a drawing choice only)
+        local xs, ys, low = {xa}, {ya}, 1
         for s = 1, 16 do
           local cx, cy = ecs.sample_catenary(lids[i], s / 16)
-          gfx.line(px, py, cx, cy, 2, '#fff')
-          px, py = cx, cy
+          xs[#xs + 1], ys[#ys + 1] = cx, cy
+          if cy > ys[low] then low = #xs end
+        end
+        local fold = ecs.get(lids[i], 'catenary_a') == 0 and ecs.get(lids[i], 'sag') > 0
+        local color = math.abs(xa - xb) < 5 and '#f8c' or '#fff'
+        for s = 2, #xs do
+          local x1, x2 = xs[s - 1], xs[s]
+          if fold and s - 1 >= low then x1 = x1 + 5 end
+          if fold and s > low then x2 = x2 + 5 end
+          gfx.line(x1, ys[s - 1], x2, ys[s], 2, color)
         end
       elseif ecs.get(lids[i], 'layer') then
         gfx.line(xa, ya, xb, yb, 4, '#c96')

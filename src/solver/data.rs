@@ -25,6 +25,8 @@ pub struct Points {
     // a body number: points and edges of the same non-zero group never collide with each
     // other (the vertices and the sides of one rigid shape); 0 is no group
     pub grp: Vec<u32>,
+    // how much of the speed a point keeps per step; NaN means the value given to the call
+    pub damp: Vec<f64>,
     pub contact: Vec<f64>,
     pub cnx: Vec<f64>,
     pub cny: Vec<f64>,
@@ -50,6 +52,7 @@ impl Points {
         self.layer.clear();
         self.mask.clear();
         self.grp.clear();
+        self.damp.clear();
         self.contact.clear();
         self.cnx.clear();
         self.cny.clear();
@@ -69,6 +72,7 @@ impl Points {
         self.layer.push(1);
         self.mask.push(1);
         self.grp.push(0);
+        self.damp.push(f64::NAN);
         self.contact.push(0.0);
         self.cnx.push(0.0);
         self.cny.push(0.0);

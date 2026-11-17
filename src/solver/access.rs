@@ -173,7 +173,7 @@ fn clean_nonneg(v: f64) -> f64 {
 
 // ---------- points ----------
 
-fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64) {
+fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64, damp: f64) {
     let p = &mut s.pts;
     p.ent.push(e);
     p.x.push(v[0]);
@@ -185,6 +185,8 @@ fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64) 
     p.layer.push(to_bits(opt3[1]));
     p.mask.push(to_bits(opt3[2]));
     p.grp.push(to_bits(group));
+    // only 0..1 is a speed factor; anything else (or no column) is NaN: the call's value
+    p.damp.push(if (0.0..=1.0).contains(&damp) { damp } else { f64::NAN });
     p.contact.push(0.0);
     p.cnx.push(0.0);
     p.cny.push(0.0);
@@ -195,7 +197,7 @@ fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64) 
     s.slot_of[i] = (s.pts.ent.len() - 1) as u32;
 }
 
-// points: x, y, old_x, old_y, inv_mass required; radius (0), layer (1), mask (1), group (0) optional.
+// points: x, y, old_x, old_y, inv_mass required; radius (0), layer (1), mask (1), group (0), damping (the call's) optional.
 // fills s.pts (w: negative or NaN becomes 0; contact, cnx, cny are the values in the world, 0 when missing) and s.slot_of.
 // None when a required column is missing
 pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
@@ -203,11 +205,11 @@ pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
     s.pts.clear();
     let req = need(world, ["x", "y", "old_x", "old_y", "inv_mass"])?;
     let (r, l, m) = (find(world, "radius"), find(world, "layer"), find(world, "mask"));
-    let grp = find(world, "group");
+    let (grp, damp) = (find(world, "group"), find(world, "damping"));
     let (cc, cx, cy) = (find(world, "contact"), find(world, "contact_nx"), find(world, "contact_ny"));
     for &e in shortest(world, &req) {
         if let Some(v) = read_all(world, &req, e) {
-            push_point(s, e, v, [opt(world, r, e, 0.0), opt(world, l, e, 1.0), opt(world, m, e, 1.0)], opt(world, grp, e, 0.0));
+            push_point(s, e, v, [opt(world, r, e, 0.0), opt(world, l, e, 1.0), opt(world, m, e, 1.0)], opt(world, grp, e, 0.0), opt(world, damp, e, f64::NAN));
             // the contact of an earlier call stays (project_edges, then project_segments in
             // one substep must not wipe each other); only integrate_verlet clears it
             let k = s.pts.contact.len() - 1;

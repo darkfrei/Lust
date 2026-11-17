@@ -18,3 +18,7 @@ assert(wy < get('joint_5', 'y') and wy > 200, 'the wheel is not on the road: y '
 mouse(150, 250, false)
 step(240)
 assert(math.abs(get('wheel', 'x') - 150) < 15, 'the wheel did not come back: x ' .. get('wheel', 'x'))
+-- the hanger is a rope with a catenary of its own (it sags when slack, it never pushes)
+assert(get('hanger', 'sag') ~= nil, 'the hanger is not a cable')
+-- joints and the wheel lose speed faster than the call's default (own damping columns)
+assert(get('joint_3', 'damping') == 0.996 and get('wheel', 'damping') == 0.984, 'damping columns')

@@ -2,7 +2,7 @@
 use super::data::Points;
 
 // for every point with w > 0:
-//   vx = (x - ox) * damping, vy likewise; ox = x, oy = y;
+//   vx = (x - ox) * damping (the point's own `damp` when it has one), vy likewise; ox = x, oy = y;
 //   x += vx + gx*dt*dt, y += vy + gy*dt*dt
 // points with w <= 0 do not move. contact is set to 0 for ALL points (a contact belongs to
 // one step). returns the number of points that moved
@@ -19,8 +19,10 @@ pub fn verlet(p: &mut Points, dt: f64, gx: f64, gy: f64, damping: f64) -> usize 
             continue;
         }
         let (x, y) = (p.x[i], p.y[i]);
-        let vx = (x - p.ox[i]) * damping;
-        let vy = (y - p.oy[i]) * damping;
+        // a point with its own damping (0..1, the share of speed it keeps) uses it
+        let k = if (0.0..=1.0).contains(&p.damp[i]) { p.damp[i] } else { damping };
+        let vx = (x - p.ox[i]) * k;
+        let vy = (y - p.oy[i]) * k;
         let nx = x + vx + gx * dd;
         let ny = y + vy + gy * dd;
         // a bad number is never written: the point keeps its old state
@@ -39,6 +41,26 @@ pub fn verlet(p: &mut Points, dt: f64, gx: f64, gy: f64, damping: f64) -> usize 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_point_with_its_own_damping_uses_it() {
+        let mut p = Points::default();
+        let (a, b) = (p.add(0.0, 0.0, 1.0, 0.0), p.add(0.0, 0.0, 1.0, 0.0));
+        p.ox[a] = -10.0;
+        p.ox[b] = -10.0;
+        p.damp[b] = 0.5;
+        verlet(&mut p, 0.01, 0.0, 0.0, 1.0);
+        assert_eq!(p.x[a], 10.0, "no damping of its own: the call's value 1.0");
+        assert_eq!(p.x[b], 5.0, "its own 0.5");
+        // a broken own value falls back to the call's
+        p.damp[a] = f64::NAN;
+        p.damp[b] = 7.0;
+        p.ox[a] = p.x[a] - 4.0;
+        p.ox[b] = p.x[b] - 4.0;
+        let (xa, xb) = (p.x[a], p.x[b]);
+        verlet(&mut p, 0.01, 0.0, 0.0, 0.5);
+        assert_eq!((p.x[a], p.x[b]), (xa + 2.0, xb + 2.0));
+    }
 
     #[test]
     fn free_fall_matches_formula() {
