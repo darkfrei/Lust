@@ -71,6 +71,7 @@ impl Launcher {
         }
         let picked = Rc::new(RefCell::new(None));
         let p = Rc::clone(&picked);
+        // lua api (launcher world only): ecs.launch(name), picks the game 'game.NNN' to start
         let f = app
             .host
             .lua()

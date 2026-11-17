@@ -252,6 +252,7 @@ pub fn attach(host: &Host) -> Result<Rc<Saves>, String> {
     let lua = host.lua();
     let err = |e: mlua::Error| e.to_string();
     let sv = Rc::clone(&s);
+    // lua api: ecs.save(slot) -> true; the save is made after this tick
     let save = lua
         .create_function(move |_, slot: String| {
             if !slot_ok(&slot) {
@@ -263,6 +264,7 @@ pub fn attach(host: &Host) -> Result<Rc<Saves>, String> {
         .map_err(err)?;
     host.add_to_ecs("save", save)?;
     let sv = Rc::clone(&s);
+    // lua api: ecs.load(slot) -> false when there is no such slot; else the load is made after this tick
     let load = lua
         .create_function(move |_, slot: String| {
             if !slot_ok(&slot) {
@@ -277,9 +279,11 @@ pub fn attach(host: &Host) -> Result<Rc<Saves>, String> {
         .map_err(err)?;
     host.add_to_ecs("load", load)?;
     let sv = Rc::clone(&s);
+    // lua api: ecs.slots() -> {names}
     let slots = lua.create_function(move |_, ()| Ok(sv.slots())).map_err(err)?;
     host.add_to_ecs("slots", slots)?;
     let sv = Rc::clone(&s);
+    // lua api: ecs.erase(slot) -> true
     let erase = lua
         .create_function(move |_, slot: String| {
             if !slot_ok(&slot) {

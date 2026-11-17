@@ -304,6 +304,7 @@ fn text_of(v: Value) -> mlua::Result<String> {
 fn gfx_table(lua: &Lua, s: &Rc<Screen>) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     let sc = Rc::clone(s);
+    // lua api: gfx.size(w, h)
     t.set(
         "size",
         lua.create_function(move |_, (w, h): (f64, f64)| {
@@ -317,21 +318,25 @@ fn gfx_table(lua: &Lua, s: &Rc<Screen>) -> mlua::Result<Table> {
             Ok(())
         })?,
     )?;
-    // gfx.mic(true): ask the display to listen to the microphone (the person is asked by the
+    // lua api: gfx.mic(true): ask the display to listen to the microphone (the person is asked by the
     // browser and sees that it is on); input.mic() then gives the loudness, 0 to 1. only the
     // loudness reaches the world, never the sound
     let sc = Rc::clone(s);
     t.set("mic", lua.create_function(move |_, on: bool| if on { sc.push(String::from("mic on")) } else { Ok(()) })?)?;
     let sc = Rc::clone(s);
+    // lua api: gfx.clear(color)
     t.set("clear", lua.create_function(move |_, c: mlua::LuaString| sc.push(format!("clear {}", color(c)?)))?)?;
     let sc = Rc::clone(s);
+    // lua api: gfx.rect(x, y, w, h, color)
     t.set(
         "rect",
         lua.create_function(move |_, (x, y, w, h, c): (f64, f64, f64, f64, mlua::LuaString)| sc.push(format!("rect {} {} {} {} {}", num(x), num(y), num(w), num(h), color(c)?)))?,
     )?;
     let sc = Rc::clone(s);
+    // lua api: gfx.circle(x, y, r, color)
     t.set("circle", lua.create_function(move |_, (x, y, r, c): (f64, f64, f64, mlua::LuaString)| sc.push(format!("circle {} {} {} {}", num(x), num(y), num(r), color(c)?)))?)?;
     let sc = Rc::clone(s);
+    // lua api: gfx.line(x1, y1, x2, y2, width, color)
     t.set(
         "line",
         lua.create_function(move |_, (x1, y1, x2, y2, w, c): (f64, f64, f64, f64, f64, mlua::LuaString)| {
@@ -339,6 +344,7 @@ fn gfx_table(lua: &Lua, s: &Rc<Screen>) -> mlua::Result<Table> {
         })?,
     )?;
     let sc = Rc::clone(s);
+    // lua api: gfx.text(x, y, size, color, text)
     t.set(
         "text",
         lua.create_function(move |_, (x, y, size, c, text): (f64, f64, f64, mlua::LuaString, Value)| {
@@ -347,6 +353,7 @@ fn gfx_table(lua: &Lua, s: &Rc<Screen>) -> mlua::Result<Table> {
         })?,
     )?;
     let sc = Rc::clone(s);
+    // lua api: gfx.measure(text, size) -> w, h
     t.set(
         "measure",
         lua.create_function(move |_, (text, size): (Value, f64)| {
@@ -363,10 +370,13 @@ fn gfx_table(lua: &Lua, s: &Rc<Screen>) -> mlua::Result<Table> {
 fn input_table(lua: &Lua, s: &Rc<Screen>) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     let sc = Rc::clone(s);
+    // lua api: input.down(key) -> bool
     t.set("down", lua.create_function(move |_, k: String| Ok(sc.input.borrow().down.contains(&Screen::key(&k))))?)?;
     let sc = Rc::clone(s);
+    // lua api: input.pressed(key) -> bool
     t.set("pressed", lua.create_function(move |_, k: String| Ok(sc.input.borrow().pressed.contains(&Screen::key(&k))))?)?;
     let sc = Rc::clone(s);
+    // lua api: input.mouse() -> x, y, down
     t.set(
         "mouse",
         lua.create_function(move |_, ()| {
@@ -375,6 +385,7 @@ fn input_table(lua: &Lua, s: &Rc<Screen>) -> mlua::Result<Table> {
         })?,
     )?;
     let sc = Rc::clone(s);
+    // lua api: input.mic() -> loudness
     t.set("mic", lua.create_function(move |_, ()| Ok(sc.input.borrow().mic))?)?;
     Ok(t)
 }
@@ -388,7 +399,7 @@ pub fn attach(host: &Host) -> Result<Rc<Screen>, String> {
     let i = input_table(lua, &s).map_err(|e| e.to_string())?;
     host.add_global("gfx", Value::Table(g))?;
     host.add_global("input", Value::Table(i))?;
-    // ecs.quit(): the game ends itself (the event quit; the program decides what that means)
+    // lua api: ecs.quit(): the game ends itself (the event quit; the program decides what that means)
     let sc = Rc::clone(&s);
     let quit = lua.create_function(move |_, ()| sc.event("quit")).map_err(|e| e.to_string())?;
     host.add_to_ecs("quit", quit)?;

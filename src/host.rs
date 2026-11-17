@@ -173,6 +173,7 @@ pub fn new_sandbox() -> mlua::Result<(Lua, Rc<Budget>)> {
         globals.set(name, Value::Nil)?;
     }
 
+    // lua api: setmetatable(t, mt), the same as in Lua but a metatable with __gc is refused
     // a metatable with __gc gives a finalizer: lua runs it at some later collection, outside
     // the run that made it, as whatever role runs then, with no undo. setmetatable refuses
     // such a table (lua 5.4 marks an object for finalization only when it is set)
@@ -194,10 +195,12 @@ pub fn new_sandbox() -> mlua::Result<(Lua, Rc<Budget>)> {
     for name in ["find", "match", "gmatch", "gsub"] {
         string.set(name, Value::Nil)?;
     }
+    // lua api: string.find_plain(s, sub) -> position of sub in s (1-based) or nil
     let find_plain = lua.create_function(|_, (s, needle): (String, String)| Ok(s.find(&needle).map(|i| i + 1)))?;
     string.set("find_plain", find_plain)?;
 
-    // string.rep with a size cap, so one call cannot take long
+    // lua api: string.rep(s, n [, sep]), the same as in Lua but with a size cap, so one call
+    // cannot take long
     let rep: Function = string.get("rep")?;
     let capped_rep = lua.create_function(move |_, (s, n, sep): (mlua::LuaString, i64, Option<mlua::LuaString>)| {
         let unit = s.as_bytes().len() + sep.as_ref().map_or(0, |x| x.as_bytes().len());
@@ -569,7 +572,7 @@ fn function_of(lua: &Lua, ctx: &Ctx, entity: &str) -> Result<Function, String> {
 fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
     let api = lua.create_table()?;
 
-    // ecs.get(e, c) -> value, from   (own value, or the one of the prefab chain). e is a
+    // lua api: ecs.get(e, c) -> value, from   (own value, or the one of the prefab chain). e is a
     // name or a number (ecs.id); c a name or, for a num component, a column number (ecs.col)
     let w = Rc::clone(&ctx.world);
     api.set(
@@ -595,7 +598,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.own(e, c) -> the own value only
+    // lua api: ecs.own(e, c) -> the own value only
     let w = Rc::clone(&ctx.world);
     api.set(
         "own",
@@ -620,7 +623,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.set(e, c, v): raises on any refusal; the host then undoes the whole run (when the
+    // lua api: ecs.set(e, c, v): raises on any refusal; the host then undoes the whole run (when the
     // world's spec says undo)
     let w = Rc::clone(&ctx.world);
     api.set(
@@ -652,7 +655,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.del(e, c): removes an own value
+    // lua api: ecs.del(e, c): removes an own value
     let w = Rc::clone(&ctx.world);
     api.set(
         "del",
@@ -666,7 +669,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.kill(e): removes an entity
+    // lua api: ecs.kill(e): removes an entity
     let w = Rc::clone(&ctx.world);
     api.set(
         "kill",
@@ -676,14 +679,14 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.instantiate(prefab, id): id and its children become instances of prefab and its children
+    // lua api: ecs.instantiate(prefab, id): id and its children become instances of prefab and its children
     let w = Rc::clone(&ctx.world);
     api.set(
         "instantiate",
         lua.create_function(move |_, (prefab, id): (String, String)| w.borrow_mut().instantiate(&prefab, &id, 0).map_err(fail))?,
     )?;
 
-    // ecs.spawn(id, {comp = value, ...}) or ecs.spawn({comp = value, ...}) -> the number of
+    // lua api: ecs.spawn(id, {comp = value, ...}) or ecs.spawn({comp = value, ...}) -> the number of
     // the new entity. without a name it is called "#<n>". is_a and parent are set first
     let w = Rc::clone(&ctx.world);
     api.set(
@@ -730,7 +733,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.with(c [, v]) -> sorted list of the names of entities with an own value of c
+    // lua api: ecs.with(c [, v]) -> sorted list of the names of entities with an own value of c
     // (equal to v)
     let w = Rc::clone(&ctx.world);
     api.set(
@@ -753,6 +756,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
     )?;
 
     let w = Rc::clone(&ctx.world);
+    // lua api: ecs.children(e) -> {names}
     api.set(
         "children",
         lua.create_function(move |_, e: Value| {
@@ -762,6 +766,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
     )?;
 
     let w = Rc::clone(&ctx.world);
+    // lua api: ecs.exists(e) -> bool
     api.set(
         "exists",
         lua.create_function(move |_, e: Value| {
@@ -770,7 +775,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.comps(e) -> the names of its own components
+    // lua api: ecs.comps(e) -> the names of its own components
     let w = Rc::clone(&ctx.world);
     api.set(
         "comps",
@@ -780,11 +785,11 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.kind(c) -> the kind of a component type, or nil
+    // lua api: ecs.kind(c) -> the kind of a component type, or nil
     let w = Rc::clone(&ctx.world);
     api.set("kind", lua.create_function(move |_, c: String| Ok(w.borrow().kind_of(&c).map(|k| k.as_str())))?)?;
 
-    // ecs.id(e) -> the number of an entity (faster than its name for num components)
+    // lua api: ecs.id(e) -> the number of an entity (faster than its name for num components)
     let w = Rc::clone(&ctx.world);
     api.set(
         "id",
@@ -794,7 +799,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.name(e) -> the name of an entity ("#<n>" when it was made without one)
+    // lua api: ecs.name(e) -> the name of an entity ("#<n>" when it was made without one)
     let w = Rc::clone(&ctx.world);
     api.set(
         "name",
@@ -804,7 +809,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.col(c) -> the number of a num component (faster than its name)
+    // lua api: ecs.col(c) -> the number of a num component (faster than its name)
     let w = Rc::clone(&ctx.world);
     api.set(
         "col",
@@ -814,7 +819,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.count() -> entities; ecs.count(c) -> entities with an own value of c
+    // lua api: ecs.count() -> entities; ecs.count(c) -> entities with an own value of c
     let w = Rc::clone(&ctx.world);
     api.set(
         "count",
@@ -830,7 +835,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.query(c, c, ...) -> n, ids, vals, vals, ...: the entities that have all these num
+    // lua api: ecs.query(c, c, ...) -> n, ids, vals, vals, ...: the entities that have all these num
     // components (own values), with one new lua table per component, in the same order, in
     // one call. the fastest way to bring many values into lua
     let w = Rc::clone(&ctx.world);
@@ -855,7 +860,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.read(c, ids, vals) -> n: one num component into two tables lua keeps from tick to
+    // lua api: ecs.read(c, ids, vals) -> n: one num component into two tables lua keeps from tick to
     // tick, so no new garbage is made; entries after n are left from an earlier tick
     let w = Rc::clone(&ctx.world);
     api.set(
@@ -874,7 +879,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.write(c, ids, vals [, n]): the values back, in one call (rights and undo hold)
+    // lua api: ecs.write(c, ids, vals [, n]): the values back, in one call (rights and undo hold)
     let w = Rc::clone(&ctx.world);
     api.set(
         "write",
@@ -893,6 +898,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
 
     // whole num components at once
     let w = Rc::clone(&ctx.world);
+    // lua api: ecs.add(dst, src [, k])
     api.set(
         "add",
         lua.create_function(move |_, (dst, src, k): (Value, Value, Option<f64>)| {
@@ -904,6 +910,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
     )?;
 
     let w = Rc::clone(&ctx.world);
+    // lua api: ecs.scale(c, k)
     api.set(
         "scale",
         lua.create_function(move |_, (c, k): (Value, f64)| {
@@ -917,6 +924,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
     )?;
 
     let w = Rc::clone(&ctx.world);
+    // lua api: ecs.fill(c, v)
     api.set(
         "fill",
         lua.create_function(move |_, (c, x): (Value, f64)| {
@@ -930,6 +938,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
     )?;
 
     let w = Rc::clone(&ctx.world);
+    // lua api: ecs.clamp(c, lo, hi)
     api.set(
         "clamp",
         lua.create_function(move |_, (c, lo, hi): (Value, f64, f64)| {
@@ -942,7 +951,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.sum(c) -> sum, n
+    // lua api: ecs.sum(c) -> sum, n
     let w = Rc::clone(&ctx.world);
     api.set(
         "sum",
@@ -956,7 +965,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.run(name [, arg]): a rust system the program added (Host::add_system)
+    // lua api: ecs.run(name [, arg]): a rust system the program added (Host::add_system)
     let w = Rc::clone(&ctx.world);
     let sy = Rc::clone(&ctx.systems);
     api.set(
@@ -973,7 +982,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.commit({key = value, ...}): a result for the program, which may give it to another
+    // lua api: ecs.commit({key = value, ...}): a result for the program, which may give it to another
     // world as one operation (link::commit_to). one at a time: a second commit before the
     // program took the first is refused
     let r = Rc::clone(&ctx.result);
@@ -1008,11 +1017,11 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.tick() -> how many ticks the world has had
+    // lua api: ecs.tick() -> how many ticks the world has had
     let t = Rc::clone(&ctx.ticks);
     api.set("tick", lua.create_function(move |_, ()| Ok(t.get()))?)?;
 
-    // ecs.call(entity, arg) -> what the code of another entity returns. code is shared
+    // lua api: ecs.call(entity, arg) -> what the code of another entity returns. code is shared
     // this way (a view uses another view, a screen block uses a view). the called code
     // runs with the rights of the run that calls it; the top of its chunk is read-only
     let cx = ctx.clone();
@@ -1031,7 +1040,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.history(entity, n) -> the last n changes of one entity (n at most 50), newest
+    // lua api: ecs.history(entity, n) -> the last n changes of one entity (n at most 50), newest
     // first: {seq, role, op, comp, value}; what a local-only value was is not shown.
     // empty in a world without a journal
     let w = Rc::clone(&ctx.world);
@@ -1063,7 +1072,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.journal(n) -> the last n entries (n at most 50): {role, op, entity, comp, value}
+    // lua api: ecs.journal(n) -> the last n entries (n at most 50): {role, op, entity, comp, value}
     let w = Rc::clone(&ctx.world);
     api.set(
         "journal",
@@ -1087,7 +1096,7 @@ fn make_api(lua: &Lua, ctx: &Ctx) -> mlua::Result<Table> {
         })?,
     )?;
 
-    // ecs.role() -> the role this run acts as
+    // lua api: ecs.role() -> the role this run acts as
     let w = Rc::clone(&ctx.world);
     api.set("role", lua.create_function(move |_, ()| Ok(w.borrow().current_role.clone()))?)?;
 

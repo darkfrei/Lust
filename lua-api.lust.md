@@ -2,7 +2,8 @@
 
 Every function a Lua file of a Lust program can call, in one place. The short form the AI reads
 is `lust_guide` (the constant `GUIDE` in `src/dev.rs`); the details of the solver are in
-`SOLVER-SPEC.ru.md`. This file is the full reference.
+`SOLVER-SPEC.ru.md`. This file is the full reference; where each function lives in Rust is in
+`lua-api.rust.md`.
 
 Words used below:
 

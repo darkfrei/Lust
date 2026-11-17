@@ -96,7 +96,7 @@ fn fail(e: String) -> mlua::Error {
 
 type Func<R> = fn(&mut World, &mut Scratch, Args) -> mlua::Result<R>;
 
-// registers one function: parses nothing itself, borrows the world and the scratch for the
+// registers one lua api function as ecs.<name>: parses nothing itself, borrows the world and the scratch for the
 // call and hands the raw arguments to f
 fn reg<R: IntoLuaMulti + 'static>(host: &Host, scratch: &Rc<RefCell<Scratch>>, name: &str, f: Func<R>) -> Result<(), String> {
     let world = Rc::clone(&host.world);
@@ -113,9 +113,10 @@ fn reg<R: IntoLuaMulti + 'static>(host: &Host, scratch: &Rc<RefCell<Scratch>>, n
     host.add_to_ecs(name, func)
 }
 
-// gives the world of a host the functions ecs.integrate_verlet, ecs.solve_distance,
-// ecs.project_segments, ecs.project_edges, ecs.project_points, ecs.path, ecs.distances, ecs.query_point, ecs.raycast_segments,
-// ecs.update_catenary, ecs.apply_catenary_load and ecs.sample_catenary
+// gives the world of a host the lua api functions ecs.solve_tick, ecs.integrate_verlet,
+// ecs.solve_distance, ecs.damp_angular, ecs.project_segments, ecs.project_edges, ecs.project_points,
+// ecs.path, ecs.distances, ecs.query_point, ecs.raycast_segments, ecs.update_catenary,
+// ecs.apply_catenary_load and ecs.sample_catenary (each handler below is marked "lua api:")
 pub fn attach(host: &Host) -> Result<(), String> {
     let sc = Rc::new(RefCell::new(Scratch::default()));
     reg(host, &sc, "integrate_verlet", integrate_verlet)?;
@@ -144,6 +145,7 @@ fn released<R>(s: &mut Scratch, body: impl FnOnce(&mut Scratch) -> Result<R, Str
     r.map_err(fail)
 }
 
+// lua api: ecs.integrate_verlet(dt, gx, gy, damping) -> moved
 fn integrate_verlet(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let dt = pos_arg(args, 0, "dt")?;
     let gx = num_arg(args, 1, "gx")?;
@@ -161,6 +163,7 @@ fn integrate_verlet(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<
     })
 }
 
+// lua api: ecs.solve_distance(dt, iterations) -> links solved
 fn solve_distance(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let dt = pos_arg(args, 0, "dt")?;
     let iterations = iterations_arg(args, 1)?;
@@ -178,6 +181,7 @@ fn solve_distance(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i6
     })
 }
 
+// lua api: ecs.damp_angular(spin, bend) -> changed
 fn damp_angular(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let spin = num_arg(args, 0, "spin")?;
     let bend = num_arg(args, 1, "bend")?;
@@ -194,6 +198,7 @@ fn damp_angular(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64>
     })
 }
 
+// lua api: ecs.solve_tick(dt, substeps, gx, gy, damping [, spin, bend]) -> steps
 // one whole tick in one call: the columns are read once, `substeps` steps of dt / substeps run on
 // the arrays, the columns are written once. each step does what a program would call one by one:
 // integrate_verlet(h, gx, gy, damping), apply_catenary_load(h, gy), solve_distance(h, 1),
@@ -272,6 +277,7 @@ fn solve_tick(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     })
 }
 
+// lua api: ecs.project_segments(iterations [, dt]) -> pushes
 fn project_segments(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let iterations = iterations_arg(args, 0)?;
     // the step (optional): with it a point with a spin turns its rim; without it nothing turns
@@ -299,6 +305,7 @@ fn project_segments(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<
     })
 }
 
+// lua api: ecs.project_edges(iterations [, dt]) -> pushes
 fn project_edges(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let iterations = iterations_arg(args, 0)?;
     // the step (optional): with it a point with a spin turns its rim; without it nothing turns
@@ -326,6 +333,7 @@ fn project_edges(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64
     })
 }
 
+// lua api: ecs.project_points(iterations) -> pushes
 // every pair of round points that overlap is pushed apart (see points.rs)
 fn project_points(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let iterations = iterations_arg(args, 0)?;
@@ -362,6 +370,7 @@ fn point_arg(w: &World, s: &Scratch, args: Args, i: usize, name: &str) -> mlua::
     Ok(w.index_of(v as i64).and_then(|e| access::slot(s, e)))
 }
 
+// lua api: ecs.path(from, to [, cost]) -> ids, cost or nil
 // ecs.path(from, to [, cost]) -> ids of the points on the cheapest way (both ends included)
 // and its cost, or nil. A* with a straight-line guide when the cost is the length
 fn path(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Option<Vec<i64>>, Option<f64>)> {
@@ -382,6 +391,7 @@ fn path(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Option<Vec<
     })
 }
 
+// lua api: ecs.distances(from [, cost]) -> ids, costs
 // ecs.distances(from [, cost]) -> ids, distances: every point that can be reached, with its cost
 fn distances(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Vec<i64>, Vec<f64>)> {
     let cost = cost_arg(args, 1)?;
@@ -406,6 +416,7 @@ fn distances(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Vec<i6
     })
 }
 
+// lua api: ecs.query_point(x, y, max_dist [, mask]) -> id, dist or nil
 fn query_point(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<MultiValue> {
     let x = num_arg(args, 0, "x")?;
     let y = num_arg(args, 1, "y")?;
@@ -424,6 +435,7 @@ fn query_point(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<Multi
     })
 }
 
+// lua api: ecs.raycast_segments(x, y, dx, dy, max_dist [, mask]) -> id, hx, hy, nx, ny, t or nil
 fn raycast_segments(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<MultiValue> {
     let x = num_arg(args, 0, "x")?;
     let y = num_arg(args, 1, "y")?;
@@ -462,6 +474,7 @@ fn cable_ends(s: &Scratch, i: usize) -> Option<[f64; 4]> {
     Some([*s.pts.x.get(a)?, *s.pts.y.get(a)?, *s.pts.x.get(b)?, *s.pts.y.get(b)?])
 }
 
+// lua api: ecs.update_catenary(gy) -> cables
 fn update_catenary(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let gy = num_arg(args, 0, "gy")?;
     writable(w)?;
@@ -502,6 +515,7 @@ fn push_end(s: &mut Scratch, p: u32, f: (f64, f64), dt: f64) {
     }
 }
 
+// lua api: ecs.apply_catenary_load(dt, gy) -> cables
 fn apply_catenary_load(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let dt = pos_arg(args, 0, "dt")?;
     let gy = num_arg(args, 1, "gy")?;
@@ -527,6 +541,7 @@ fn apply_catenary_load(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Resu
     })
 }
 
+// lua api: ecs.sample_catenary(id, t) -> x, y
 fn sample_catenary(w: &mut World, _s: &mut Scratch, args: Args) -> mlua::Result<MultiValue> {
     let id = num_arg(args, 0, "id")?;
     if id.fract() != 0.0 || id.abs() > 9.0e15 {

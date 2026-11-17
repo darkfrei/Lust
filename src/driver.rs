@@ -152,6 +152,7 @@ impl Driver {
         // what the world told the display (sounds, quit), kept for events()
         let told: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
         let tl = Rc::clone(&told);
+        // lua api (driver): step([n [, dt]])
         g.set(
             "step",
             lua.create_function(move |_, (n, dt): (Option<i64>, Option<f64>)| {
@@ -187,6 +188,7 @@ impl Driver {
         )?;
 
         let h = Rc::clone(&app.host);
+        // lua api (driver): get(e, c)
         g.set(
             "get",
             lua.create_function(move |lua, (e, c): (String, String)| {
@@ -205,6 +207,7 @@ impl Driver {
         )?;
 
         let h = Rc::clone(&app.host);
+        // lua api (driver): set(e, c, v)
         g.set(
             "set",
             lua.create_function(move |_, (e, c, v): (String, String, Value)| {
@@ -214,6 +217,7 @@ impl Driver {
         )?;
 
         let k = Rc::clone(held);
+        // lua api (driver): keys(k, ...)
         g.set(
             "keys",
             lua.create_function(move |_, list: MultiValue| {
@@ -229,6 +233,7 @@ impl Driver {
         )?;
 
         let k = Rc::clone(held);
+        // lua api (driver): press(k)
         g.set(
             "press",
             lua.create_function(move |_, key: String| {
@@ -238,6 +243,7 @@ impl Driver {
         )?;
 
         let k = Rc::clone(held);
+        // lua api (driver): mouse(x, y, down)
         g.set(
             "mouse",
             lua.create_function(move |_, (x, y, d): (f64, f64, Option<bool>)| {
@@ -253,6 +259,7 @@ impl Driver {
         )?;
 
         let k = Rc::clone(held);
+        // lua api (driver): mic(level)
         g.set(
             "mic",
             lua.create_function(move |_, level: f64| {
@@ -262,6 +269,7 @@ impl Driver {
         )?;
 
         let k = Rc::clone(held);
+        // lua api (driver): glyph(w)
         g.set(
             "glyph",
             lua.create_function(move |_, w: f64| {
@@ -271,9 +279,11 @@ impl Driver {
         )?;
 
         let (h, s, f) = (Rc::clone(&app.host), Rc::clone(&app.screen), Rc::clone(&files));
+        // lua api (driver): draw() -> frame as text
         g.set("draw", lua.create_function(move |_, ()| screen::draw(&h, &s).map_err(|e| fail(explain(&f, &e))))?)?;
 
         let (h, f) = (Rc::clone(&app.host), Rc::clone(&files));
+        // lua api (driver): run(role, op, {k = v})
         g.set(
             "run",
             lua.create_function(move |_, (role, op, args): (String, String, Option<Table>)| {
@@ -289,6 +299,7 @@ impl Driver {
         )?;
 
         let (h, f) = (Rc::clone(&app.host), Rc::clone(&files));
+        // lua api (driver): view(name [, arg])
         g.set(
             "view",
             lua.create_function(move |lua, (name, arg): (String, Option<String>)| {
@@ -298,15 +309,20 @@ impl Driver {
         )?;
 
         let h = Rc::clone(&app.host);
+        // lua api (driver): ents(c)
         g.set("ents", lua.create_function(move |_, c: String| Ok(h.world.borrow().with(&c, None)))?)?;
 
         let h = Rc::clone(&app.host);
+        // lua api (driver): tick()
         g.set("tick", lua.create_function(move |_, ()| Ok(h.ticks()))?)?;
 
+        // lua api (driver): events()
         g.set("events", lua.create_function(move |_, ()| Ok(std::mem::take(&mut *told.borrow_mut())))?)?;
 
+        // lua api (driver): ms()
         g.set("ms", lua.create_function(move |_, ()| Ok(start.elapsed().as_secs_f64() * 1000.0))?)?;
 
+        // lua api (driver): ecs, input and gfx exist only to explain with an error that the driver has none
         // driver code is not a code file of the world: the tables of the world say so
         for (name, hint) in [
             ("ecs", "the driver has no ecs: use get(e, c), set(e, c, v), ents(c), step(); ecs works in the code files (sys/, lib/, ...)"),
@@ -321,6 +337,7 @@ impl Driver {
         }
 
         let o = Rc::clone(out);
+        // lua api (driver): print(...)
         g.set(
             "print",
             lua.create_function(move |_, list: MultiValue| {

@@ -19,7 +19,7 @@ Lust gives a program five things at once, already working together:
 - **A program as a folder of Lua files** (`lust dev <folder>`): an AI builds a game or a
   tool through MCP, writing Lua files only, never Rust. Every change is hot (the world keeps
   its values, the new code runs from the next tick), and the person watches it in the
-  browser. See [docs/dev.md](docs/dev.md); every Lua function: [lua-api.lust.md](lua-api.lust.md).
+  browser. See [docs/dev.md](docs/dev.md); every Lua function: [lua-api.lust.md](lua-api.lust.md), and where it lives in Rust: [lua-api.rust.md](lua-api.rust.md).
 
 On top of that, a program adds **its own Lua API**. A game engine in the spirit of LÖVE
 adds its drawing and input, an ERP its documents and pages, a simulation its clock. The
