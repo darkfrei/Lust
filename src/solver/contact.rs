@@ -349,32 +349,44 @@ fn edge_push(p: &mut Points, i: usize, h: &EdgeHit, mu: f64) -> bool {
         return false;
     }
     let s = (h.r - h.d) / w_sum;
+    // the speeds before the push: of the point, of both ends, of the edge point q
     let (vp, vq) = edge_rel_velocity(p, i, h);
+    let va = sub(pos(p, h.a), old(p, h.a));
+    let vb = sub(pos(p, h.b), old(p, h.b));
+    // 1. the overlap is taken out by moving the positions; the speeds stay (old moves along), so
+    //    a push out of an overlap gives no speed and no energy to anything
+    let (ka, kb) = (wa * (1.0 - h.t), wb * h.t);
+    let np = (p.x[i] + wp * s * h.n.0, p.y[i] + wp * s * h.n.1);
+    let na = (p.x[h.a] - ka * s * h.n.0, p.y[h.a] - ka * s * h.n.1);
+    let nb = (p.x[h.b] - kb * s * h.n.0, p.y[h.b] - kb * s * h.n.1);
+    // 2. the speed: when the point and the edge come closer, one impulse (the same effective mass
+    //    w_sum) takes the speed of approach away from both, and friction (mu) a share of the speed
+    //    along the edge. the momentum is kept; a fixed edge (wa = wb = 0) gives the old rule: the
+    //    point moves along with the edge, less friction
     let rel = sub(vp, vq);
     let rel_n = dot(rel, h.n);
-    let np = (p.x[i] + wp * s * h.n.0, p.y[i] + wp * s * h.n.1);
-    let na = (
-        p.x[h.a] - wa * (1.0 - h.t) * s * h.n.0,
-        p.y[h.a] - wa * (1.0 - h.t) * s * h.n.1,
-    );
-    let nb = (p.x[h.b] - wb * h.t * s * h.n.0, p.y[h.b] - wb * h.t * s * h.n.1);
-    let new_vp = if rel_n < 0.0 {
-        let k = 1.0 - mu;
-        (
-            vq.0 + (rel.0 - rel_n * h.n.0) * k,
-            vq.1 + (rel.1 - rel_n * h.n.1) * k,
-        )
-    } else {
-        vp
-    };
-    let no = (np.0 - new_vp.0, np.1 - new_vp.1);
-    if !(finite2(np) && finite2(na) && finite2(nb) && finite2(no)) {
+    let (mut nvp, mut nva, mut nvb) = (vp, va, vb);
+    if rel_n < 0.0 {
+        let rt = (rel.0 - rel_n * h.n.0, rel.1 - rel_n * h.n.1);
+        // the impulse (per unit of w): along the normal, and against the sliding
+        let j = (-rel_n * h.n.0 - mu * rt.0, -rel_n * h.n.1 - mu * rt.1);
+        let j = (j.0 / w_sum, j.1 / w_sum);
+        nvp = (vp.0 + wp * j.0, vp.1 + wp * j.1);
+        nva = (va.0 - ka * j.0, va.1 - ka * j.1);
+        nvb = (vb.0 - kb * j.0, vb.1 - kb * j.1);
+    }
+    let no = (np.0 - nvp.0, np.1 - nvp.1);
+    let noa = (na.0 - nva.0, na.1 - nva.1);
+    let nob = (nb.0 - nvb.0, nb.1 - nvb.1);
+    if !(finite2(np) && finite2(na) && finite2(nb) && finite2(no) && finite2(noa) && finite2(nob)) {
         return false;
     }
     (p.x[i], p.y[i]) = np;
     (p.x[h.a], p.y[h.a]) = na;
     (p.x[h.b], p.y[h.b]) = nb;
     (p.ox[i], p.oy[i]) = no;
+    (p.ox[h.a], p.oy[h.a]) = noa;
+    (p.ox[h.b], p.oy[h.b]) = nob;
     p.contact[i] = 1.0;
     p.cnx[i] = h.n.0;
     p.cny[i] = h.n.1;
@@ -443,6 +455,46 @@ mod tests {
         p.y[i] = 2.0 * y - p.oy[i] + gy;
         p.ox[i] = x;
         p.oy[i] = y;
+    }
+
+    // a resting point pressed into a resting free edge: the push separates them and gives no
+    // speed to anything (a push out of an overlap is not a bounce), so no energy comes from it
+    #[test]
+    fn an_edge_pushed_by_a_resting_point_does_not_fly_away() {
+        let mut p = Points::default();
+        let a = p.add(-10.0, 0.0, 1.0, 0.0);
+        let b = p.add(10.0, 0.0, 1.0, 0.0);
+        let c = p.add(0.0, 3.0, 0.02, 5.0);
+        p.mask[c] = 4;
+        let mut e = Edges::default();
+        e.add(a, b, 4, 0.5);
+        assert_eq!(project_edges(&mut p, &e, 1), 1);
+        for i in [a, b, c] {
+            let (vx, vy) = (p.x[i] - p.ox[i], p.y[i] - p.oy[i]);
+            assert!(vx.abs() < 1e-12 && vy.abs() < 1e-12, "point {} got speed {} {}", i, vx, vy);
+        }
+        assert!(p.y[c] - p.y[a] >= 5.0 - 1e-9, "not pushed apart");
+    }
+
+    // an edge moving into a resting point: after the hit they move together along the normal
+    // (no bounce) and the momentum along the normal is kept
+    #[test]
+    fn an_edge_hitting_a_point_keeps_momentum_and_does_not_bounce() {
+        let mut p = Points::default();
+        let a = p.add(-10.0, 0.0, 1.0, 0.0);
+        let b = p.add(10.0, 0.0, 1.0, 0.0);
+        p.oy[a] = -1.0;
+        p.oy[b] = -1.0;
+        let c = p.add(0.0, 4.5, 0.5, 5.0);
+        p.mask[c] = 4;
+        let mut e = Edges::default();
+        e.add(a, b, 4, 0.0);
+        let mom = |p: &Points| (0..3).map(|i| (p.y[i] - p.oy[i]) / p.w[i]).sum::<f64>();
+        let before = mom(&p);
+        assert_eq!(project_edges(&mut p, &e, 1), 1);
+        assert!((mom(&p) - before).abs() < 1e-9, "{} {}", mom(&p), before);
+        let (va, vc) = (p.y[a] - p.oy[a], p.y[c] - p.oy[c]);
+        assert!((va - vc).abs() < 1e-9, "the edge bounces: {} {}", va, vc);
     }
 
     #[test]
