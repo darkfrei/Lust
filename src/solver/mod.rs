@@ -121,6 +121,7 @@ pub fn attach(host: &Host) -> Result<(), String> {
     reg(host, &sc, "integrate_verlet", integrate_verlet)?;
     reg(host, &sc, "solve_distance", solve_distance)?;
     reg(host, &sc, "damp_angular", damp_angular)?;
+    reg(host, &sc, "solve_tick", solve_tick)?;
     reg(host, &sc, "project_segments", project_segments)?;
     reg(host, &sc, "project_edges", project_edges)?;
     reg(host, &sc, "project_points", project_points)?;
@@ -189,6 +190,78 @@ fn damp_angular(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64>
         }
         let n = angular::damp(&mut s.pts, &s.links, spin, bend);
         access::scatter_points(w, s, &pc, OLD)?;
+        Ok(n as i64)
+    })
+}
+
+// one whole tick in one call: the columns are read once, `substeps` steps of dt / substeps run on
+// the arrays, the columns are written once. each step does what a program would call one by one:
+// integrate_verlet(h, gx, gy, damping), apply_catenary_load(h, gy), solve_distance(h, 1),
+// damp_angular(spin, bend), project_edges(1), project_segments(1). the result is the same as those
+// calls in that order (the same numbers, the same order of work); reading and writing the world
+// 6 times per step is what this saves. returns the number of steps
+fn solve_tick(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
+    let dt = pos_arg(args, 0, "dt")?;
+    let n = num_arg(args, 1, "substeps")?;
+    if n.fract() != 0.0 || !(1.0..=256.0).contains(&n) {
+        return Err(bad_arg("substeps"));
+    }
+    let n = n as usize;
+    let gx = num_arg(args, 2, "gx")?;
+    let gy = num_arg(args, 3, "gy")?;
+    let damping = num_arg(args, 4, "damping")?;
+    let spin = opt_num_arg(args, 5, "spin")?.unwrap_or(0.0);
+    let bend = opt_num_arg(args, 6, "bend")?.unwrap_or(0.0);
+    writable(w)?;
+    released(s, |s| {
+        let Some(pc) = access::gather_points(w, s) else { return Ok(0) };
+        if s.pts.is_empty() {
+            return Ok(0);
+        }
+        let lc = access::gather_links(w, s);
+        let has_links = lc.is_some() && !s.links.is_empty();
+        let has_edges = access::gather_edges(w, s).is_some() && !s.edges.is_empty();
+        let has_segs = access::gather_segs(w, s).is_some() && !s.segs.is_empty();
+        let has_cables = access::gather_cables(w, s).is_some() && s.cables.rho.iter().any(|&r| r > 0.0);
+        let mut adj = angular::Adj::default();
+        let damp = has_links && (angular::wants_spin(&s.links, spin) || angular::wants_bend(&s.pts, bend));
+        if damp && angular::wants_bend(&s.pts, bend) {
+            angular::adjacency(s.pts.len(), &s.links, &mut adj);
+        }
+        let h = dt / n as f64;
+        for _ in 0..n {
+            integrate::verlet(&mut s.pts, h, gx, gy, damping);
+            if has_cables {
+                for i in 0..s.cables.ent.len() {
+                    let rho = s.cables.rho[i];
+                    let Some(ends) = cable_ends(s, i) else { continue };
+                    if rho <= 0.0 {
+                        continue;
+                    }
+                    let len = s.cables.len[i];
+                    let sh = catenary::shape_loaded(ends, len, gy, s.cables.slack[i]);
+                    let (fa, fb) = catenary::end_forces(&sh, ends, len, rho, gy);
+                    push_end(s, s.cables.a[i], fa, h);
+                    push_end(s, s.cables.b[i], fb, h);
+                }
+            }
+            if has_links {
+                distance::solve(&mut s.pts, &mut s.links, h, 1);
+            }
+            if damp {
+                angular::damp_with(&mut s.pts, &s.links, &adj, spin, bend);
+            }
+            if has_edges {
+                contact::project_edges(&mut s.pts, &s.edges, 1);
+            }
+            if has_segs {
+                contact::project_segments(&mut s.pts, &s.segs, 1);
+            }
+        }
+        access::scatter_points(w, s, &pc, POS | OLD | CONTACT)?;
+        if let (true, Some(lc)) = (has_links, lc) {
+            access::scatter_links(w, s, &lc)?;
+        }
         Ok(n as i64)
     })
 }
@@ -444,10 +517,11 @@ mod tests {
         h
     }
 
-    const NAMES: [&str; 13] = [
+    const NAMES: [&str; 14] = [
         "integrate_verlet",
         "solve_distance",
         "damp_angular",
+        "solve_tick",
         "project_segments",
         "project_edges",
         "project_points",

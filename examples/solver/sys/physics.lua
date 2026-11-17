@@ -244,15 +244,6 @@ local function build()
   ecs.set('app', 'ready', 1)
 end
 
-local function substep(h, scale)
-  ecs.integrate_verlet(h, 0, 980, 0.999)
-  ecs.apply_catenary_load(h, 980)
-  ecs.solve_distance(h, 1)
-  ecs.damp_angular(SPIN * scale, BEND * scale)
-  ecs.project_edges(1)
-  ecs.project_segments(1)
-end
-
 return function(dt)
   local level = ecs.get('app', 'level') or 1
   if input.pressed('1') then restart(1) elseif input.pressed('2') then restart(2)
@@ -287,7 +278,10 @@ return function(dt)
   break_doomed()
   ecs.fill('force_max', 0)
   local scale = ecs.get('app', 'dscale') or 1
-  for i = 1, 16 do substep(dt / 16, scale) end
+  -- one call for the whole tick: 16 substeps, each one integrate_verlet, apply_catenary_load,
+  -- solve_distance, damp_angular, project_edges, project_segments (the same as those calls one
+  -- by one, only the world is read and written once)
+  ecs.solve_tick(dt, 16, 0, 980, 0.999, SPIN * scale, BEND * scale)
   ecs.update_catenary(980)
   if ecs.tick() - ecs.get('app', 'born') > WARMUP then judge() end
   sweep()

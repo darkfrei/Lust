@@ -229,3 +229,29 @@ fn a_cable_reports_its_tension() {
     // a cable that hangs on its own weight (0.5 * 980 * 220 = 107800) pulls its ends with at least half of it
     assert!(t > 53000.0 && t.is_finite(), "tension {}", t);
 }
+
+// solve_tick (one call per tick) gives bit for bit what the six calls per substep give
+#[test]
+fn solve_tick_is_the_same_as_the_calls_one_by_one() {
+    let (a, b) = (host(), host());
+    for h in [&a, &b] {
+        assert_eq!(h.probe(SCENE).unwrap(), "ok");
+        // a cable over the bridge, so the catenary load is in the step too
+        h.probe("ecs.spawn('c0', {x = 100, y = 100, old_x = 100, old_y = 100, inv_mass = 0, radius = 0, layer = 1, mask = 1, contact = 0, contact_nx = 0, contact_ny = 0}) ecs.spawn('cab', {node_a = ecs.id('c0'), node_b = ecs.id('p5'), rest_len = 230, compliance = 0, mode = 1, lambda = 0, force_max = 0, catenary_a = 0, catenary_x0 = 0, catenary_y0 = 0, sag = 0, linear_density = 0.5}) return 'ok'").unwrap();
+    }
+    let one_by_one = "for t = 1, 40 do ecs.fill('force_max', 0) for i = 1, 16 do ecs.integrate_verlet(1/960, 0, 980, 0.999) ecs.apply_catenary_load(1/960, 980) ecs.solve_distance(1/960, 1) ecs.damp_angular(0.01, 0.05) ecs.project_edges(1) ecs.project_segments(1) end end return 'ok'";
+    let at_once = "for t = 1, 40 do ecs.fill('force_max', 0) ecs.solve_tick(1/60, 16, 0, 980, 0.999, 0.01, 0.05) end return 'ok'";
+    assert_eq!(a.probe(one_by_one).unwrap(), "ok");
+    assert_eq!(b.probe(at_once).unwrap(), "ok");
+    assert_eq!(state(&a), state(&b));
+    for c in ["force_max", "lambda", "contact"] {
+        for e in ["b3", "b7", "cab", "ball", "p4"] {
+            let (x, y) = (a.world.borrow().num(e, c), b.world.borrow().num(e, c));
+            assert_eq!(x.map(f64::to_bits), y.map(f64::to_bits), "{} {}", e, c);
+        }
+    }
+    // bad arguments are refused
+    for bad in ["ecs.solve_tick(0, 16, 0, 980, 0.999)", "ecs.solve_tick(1/60, 0, 0, 980, 0.999)", "ecs.solve_tick(1/60, 1.5, 0, 980, 0.999)", "ecs.solve_tick(1/60, 16, 0, 980)"] {
+        assert!(b.probe(bad).is_err(), "{}", bad);
+    }
+}

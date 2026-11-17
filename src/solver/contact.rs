@@ -201,10 +201,12 @@ fn segments_for_point(p: &mut Points, s: &Segs, i: usize) -> usize {
 // sets x y ox oy contact cnx cny of the points that were pushed. `iterations` passes.
 // returns the number of pushes done
 pub fn project_segments(p: &mut Points, s: &Segs, iterations: usize) -> usize {
+    // a point whose mask meets no layer of any segment is skipped at once (most joints)
+    let any = s.layer.iter().fold(0u32, |m, &l| m | l);
     let mut pushes = 0;
     for _ in 0..iterations {
         for i in 0..p.len() {
-            if active(p, i) {
+            if p.mask[i] & any != 0 && active(p, i) {
                 pushes += segments_for_point(p, s, i);
             }
         }
@@ -405,10 +407,12 @@ fn edges_for_point(p: &mut Points, e: &Edges, i: usize) -> usize {
 // whose ends are not the point itself. moves the point and both ends of the edge. returns the
 // number of pushes done
 pub fn project_edges(p: &mut Points, e: &Edges, iterations: usize) -> usize {
+    // a point whose mask meets no layer of any edge is skipped at once (most joints)
+    let any = e.layer.iter().fold(0u32, |m, &l| m | l);
     let mut pushes = 0;
     for _ in 0..iterations {
         for i in 0..p.len() {
-            if active(p, i) && finite2(old(p, i)) {
+            if p.mask[i] & any != 0 && active(p, i) && finite2(old(p, i)) {
                 pushes += edges_for_point(p, e, i);
             }
         }

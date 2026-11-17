@@ -4,8 +4,8 @@
 // the scene is a lattice of joints (columns x 10 rows): a horizontal, a vertical and a diagonal
 // beam to every joint (about 3 boards per joint), the first column fixed, the bottom row also
 // road edges (layer 4) with a few wheels over it, one ground segment. a tick is 16 substeps of
-// integrate_verlet, damp_angular, solve_distance, project_edges, project_segments, as the example
-// game does it
+// integrate_verlet, damp_angular, solve_distance, project_edges, project_segments one by one, then
+// the same tick as one solve_tick call
 use super::attach;
 use crate::ecs::{Spec, World};
 use crate::host::Host;
@@ -151,5 +151,14 @@ fn one_tick_on_1_000_10_000_and_100_000_boards() {
             println!("  {:<18} {:>9.2} ms per tick", name, ms);
         }
         println!("  {:<18} {:>9.2} ms per tick (16 substeps), {:.1} fps if only this", "all five", total, 1000.0 / total);
+        // the same tick in one call (columns read and written once)
+        for (name, call) in [
+            ("solve_tick", "ecs.solve_tick(1/60, 16, 0, 980, 0.999, 0.00005, 0.0005)"),
+            ("  no turn friction", "ecs.solve_tick(1/60, 16, 0, 980, 0.999, 0, 0)"),
+            ("  spin only", "ecs.solve_tick(1/60, 16, 0, 980, 0.999, 0.00005, 0)"),
+        ] {
+            let ms = time(&h, call, ticks) / ticks as f64;
+            println!("  {:<18} {:>9.2} ms per tick, {:.1} fps if only this", name, ms, 1000.0 / ms);
+        }
     }
 }
