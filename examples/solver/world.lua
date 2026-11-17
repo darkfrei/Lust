@@ -13,7 +13,7 @@ return {
     linear_density = 'num', min_slack = 'num', tension = 'num', strength = 'num', damping = 'num', ready = 'num', mass0 = 'num', born = 'num', broken = 'num', weighs = 'num', level = 'num', dscale = 'num', doomed = 'num',
   },
   entities = {
-    app = {ready = 0, level = 1, dscale = 0.25},
+    app = {ready = 0, level = 1, dscale = 0.01},
     ground = {x1 = 0, y1 = 500, x2 = 800, y2 = 500, friction = 0.5, layer = 1},
     ['sys.physics'] = {ord = 1},
   },

@@ -19,10 +19,10 @@ local DEBRIS_DAMP = 0.995
 -- friction against turning, per substep: SPIN is the share of the turning of a link (its ends
 -- moving across it) that is taken, BEND the share of the turning of one link against the next at
 -- a joint (hinge friction)
--- (the base values; the button 'Turn friction' scales both, 25 % at the start)
+-- (the base values; the button 'Turn friction' scales both, 1 % at the start)
 local SPIN = 0.005
 local BEND = 0.05
-local FRICTION_STEPS = {0, 0.25, 0.5, 1}
+local FRICTION_STEPS = {0, 0.01, 0.25, 0.5, 1}
 -- the start of the scene is a shock (a straight, taut road and cable begin to hang, forces of
 -- 10^7 and more in the first ticks), so nothing is judged before this many ticks after the level was built
 local WARMUP = 30
@@ -257,7 +257,7 @@ return function(dt)
   local level = ecs.get('app', 'level') or 1
   if input.pressed('1') then restart(1) elseif input.pressed('2') then restart(2)
   elseif input.pressed('r') then restart(level) end
-  -- D (or the button) goes to the next step of the turn friction: 0, 25, 50, 100 % of the base
+  -- D (or the button) goes to the next step of the turn friction: 0, 1, 25, 50, 100 % of the base
   if input.pressed('d') then
     local now, nextv = ecs.get('app', 'dscale') or 1, FRICTION_STEPS[1]
     for i, v in ipairs(FRICTION_STEPS) do if v > now + 1e-9 then nextv = v break end end
