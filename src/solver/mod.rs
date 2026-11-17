@@ -229,6 +229,9 @@ fn solve_tick(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
             angular::adjacency(s.pts.len(), &s.links, &mut adj);
         }
         let h = dt / n as f64;
+        for r in s.pts.roll.iter_mut() {
+            *r *= h;
+        }
         for _ in 0..n {
             integrate::verlet(&mut s.pts, h, gx, gy, damping);
             if has_cables {
@@ -268,9 +271,18 @@ fn solve_tick(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
 
 fn project_segments(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let iterations = iterations_arg(args, 0)?;
+    // the step (optional): with it a point with a spin turns its rim; without it nothing turns
+    let step = match opt_num_arg(args, 1, "dt")? {
+        Some(v) if v > 0.0 => v,
+        Some(_) => return Err(bad_arg("dt")),
+        None => 0.0,
+    };
     writable(w)?;
     released(s, |s| {
         let Some(pc) = access::gather_points(w, s) else { return Ok(0) };
+        for r in s.pts.roll.iter_mut() {
+            *r *= step;
+        }
         if access::gather_segs(w, s).is_none() || s.pts.is_empty() || s.segs.is_empty() {
             return Ok(0);
         }
@@ -282,9 +294,18 @@ fn project_segments(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<
 
 fn project_edges(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
     let iterations = iterations_arg(args, 0)?;
+    // the step (optional): with it a point with a spin turns its rim; without it nothing turns
+    let step = match opt_num_arg(args, 1, "dt")? {
+        Some(v) if v > 0.0 => v,
+        Some(_) => return Err(bad_arg("dt")),
+        None => 0.0,
+    };
     writable(w)?;
     released(s, |s| {
         let Some(pc) = access::gather_points(w, s) else { return Ok(0) };
+        for r in s.pts.roll.iter_mut() {
+            *r *= step;
+        }
         if access::gather_edges(w, s).is_none() || s.pts.is_empty() || s.edges.is_empty() {
             return Ok(0);
         }

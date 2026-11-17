@@ -30,6 +30,10 @@ pub struct Points {
     // how much of the turning of one link against another at this point is taken per step; NaN
     // means the value given to the call (damp_angular)
     pub bend: Vec<f64>,
+    // the turning of the point as a circle, radians per step (plus is clockwise on the screen, y
+    // down). friction with an edge or a segment works against the speed of its rim, so a turning
+    // circle drives itself along (and the edge the other way). 0: no turning
+    pub roll: Vec<f64>,
     pub contact: Vec<f64>,
     pub cnx: Vec<f64>,
     pub cny: Vec<f64>,
@@ -57,6 +61,7 @@ impl Points {
         self.grp.clear();
         self.damp.clear();
         self.bend.clear();
+        self.roll.clear();
         self.contact.clear();
         self.cnx.clear();
         self.cny.clear();
@@ -78,6 +83,7 @@ impl Points {
         self.grp.push(0);
         self.damp.push(f64::NAN);
         self.bend.push(f64::NAN);
+        self.roll.push(0.0);
         self.contact.push(0.0);
         self.cnx.push(0.0);
         self.cny.push(0.0);

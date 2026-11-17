@@ -232,6 +232,8 @@ end
 -- to the mouse
 local function build_wheel()
   point('wheel', 200, 250, 0.02, 12, 16, 23, 0.96)
+  ecs.set('wheel', 'spin', 0)
+  ecs.set('wheel', 'phase', 0)
   point('mouse', 200, 250, 0, 0, 32, 0)
   link('drag', 'mouse', 'wheel', 0, 0.00002, 0, nil)
 end
@@ -244,12 +246,37 @@ local function build()
   ecs.set('app', 'ready', 1)
 end
 
+-- the wheel turns: D clockwise (it drives to the right on a road below it), A the other way. the
+-- turning speed is the column spin (radians per second), the solver lets the rim rub on roads and
+-- the ground with it. without a key the wheel rolls freely: on a road its spin goes to the speed
+-- of rolling (its speed along the road / radius). phase is the angle, only for the drawing
+local SPIN_MAX = 20
+local SPIN_ACC = 40
+local function drive_wheel(dt)
+  local w = ecs.get('wheel', 'spin')
+  if not w then return end
+  local key = (input.down('d') and 1 or 0) - (input.down('a') and 1 or 0)
+  if key ~= 0 then
+    w = math.max(-SPIN_MAX, math.min(SPIN_MAX, w + key * SPIN_ACC * dt))
+  elseif ecs.get('wheel', 'contact') == 1 then
+    local nx, ny = ecs.get('wheel', 'contact_nx'), ecs.get('wheel', 'contact_ny')
+    local h = dt / 16
+    local vx = (ecs.get('wheel', 'x') - ecs.get('wheel', 'old_x')) / h
+    local vy = (ecs.get('wheel', 'y') - ecs.get('wheel', 'old_y')) / h
+    w = (vx * -ny + vy * nx) / ecs.get('wheel', 'radius')
+  else
+    w = w * 0.99
+  end
+  ecs.set('wheel', 'spin', w)
+  ecs.set('wheel', 'phase', (ecs.get('wheel', 'phase') + w * dt) % (2 * math.pi))
+end
+
 return function(dt)
   local level = ecs.get('app', 'level') or 1
   if input.pressed('1') then restart(1) elseif input.pressed('2') then restart(2)
   elseif input.pressed('r') then restart(level) end
-  -- D (or the button) goes to the next step of the turn friction: 0, 1, 25, 50, 100 % of the base
-  if input.pressed('d') then
+  -- F (or the button) goes to the next step of the turn friction: 0, 1, 25, 50, 100 % of the base
+  if input.pressed('f') then
     local now, nextv = ecs.get('app', 'dscale') or 1, FRICTION_STEPS[1]
     for i, v in ipairs(FRICTION_STEPS) do if v > now + 1e-9 then nextv = v break end end
     ecs.set('app', 'dscale', nextv)
@@ -281,6 +308,7 @@ return function(dt)
   -- one call for the whole tick: 16 substeps, each one integrate_verlet, apply_catenary_load,
   -- solve_distance, damp_angular, project_edges, project_segments (the same as those calls one
   -- by one, only the world is read and written once)
+  drive_wheel(dt)
   ecs.solve_tick(dt, 16, 0, 980, 0.999, SPIN * scale, BEND * scale)
   ecs.update_catenary(980)
   if ecs.tick() - ecs.get('app', 'born') > WARMUP then judge() end

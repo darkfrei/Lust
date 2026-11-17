@@ -42,11 +42,23 @@ fn old(p: &Points, i: usize) -> V2 {
 }
 
 // new old position after a push: friction only on an inward hit (vn < 0), else speed is kept
-fn new_old(v: V2, n: V2, mu: f64, new_pos: V2) -> V2 {
+// the speed of the rim of a turning circle where it touches along normal n (the rim point is
+// at -n * r from the centre): roll * r * (n.y, -n.x)
+fn rim(roll: f64, r: f64, n: V2) -> V2 {
+    if roll == 0.0 || !roll.is_finite() {
+        return (0.0, 0.0);
+    }
+    (roll * r * n.1, -roll * r * n.0)
+}
+
+// friction takes a share mu of the sliding: the speed along the surface of the rim against it
+fn new_old(v: V2, n: V2, mu: f64, new_pos: V2, rim_v: V2) -> V2 {
     let vn = dot(v, n);
     if vn < 0.0 {
         let vt = (v.0 - vn * n.0, v.1 - vn * n.1);
-        (new_pos.0 - vt.0 * (1.0 - mu), new_pos.1 - vt.1 * (1.0 - mu))
+        let slip = (vt.0 + rim_v.0, vt.1 + rim_v.1);
+        let nv = (vt.0 - mu * slip.0, vt.1 - mu * slip.1);
+        (new_pos.0 - nv.0, new_pos.1 - nv.1)
     } else {
         (new_pos.0 - v.0, new_pos.1 - v.1)
     }
@@ -158,7 +170,7 @@ fn apply_point_push(p: &mut Points, i: usize, np: V2, n: V2, mu: f64) -> bool {
         return false;
     }
     let v = sub(pos(p, i), old(p, i));
-    let no = new_old(v, n, mu, np);
+    let no = new_old(v, n, mu, np, rim(p.roll[i], p.r[i], n));
     if !finite2(no) {
         return false;
     }
@@ -367,7 +379,9 @@ fn edge_push(p: &mut Points, i: usize, h: &EdgeHit, mu: f64) -> bool {
     let rel_n = dot(rel, h.n);
     let (mut nvp, mut nva, mut nvb) = (vp, va, vb);
     if rel_n < 0.0 {
-        let rt = (rel.0 - rel_n * h.n.0, rel.1 - rel_n * h.n.1);
+        // the sliding: the speed along the edge plus the speed of the rim of a turning point
+        let rv = rim(p.roll[i], p.r[i], h.n);
+        let rt = (rel.0 - rel_n * h.n.0 + rv.0, rel.1 - rel_n * h.n.1 + rv.1);
         // the impulse (per unit of w): along the normal, and against the sliding
         let j = (-rel_n * h.n.0 - mu * rt.0, -rel_n * h.n.1 - mu * rt.1);
         let j = (j.0 / w_sum, j.1 / w_sum);
@@ -495,6 +509,43 @@ mod tests {
         assert!((mom(&p) - before).abs() < 1e-9, "{} {}", mom(&p), before);
         let (va, vc) = (p.y[a] - p.oy[a], p.y[c] - p.oy[c]);
         assert!((va - vc).abs() < 1e-9, "the edge bounces: {} {}", va, vc);
+    }
+
+    // a turning circle on a segment with friction drives itself until it rolls: its speed plus
+    // the speed of its rim at the contact goes to zero
+    #[test]
+    fn a_turning_circle_rolls_along_a_segment() {
+        let mut s = Segs::default();
+        s.add(-1000.0, 0.0, 1000.0, 0.0, 0.5, 1);
+        let mut p = Points::default();
+        let i = p.add(0.0, 10.0, 1.0, 10.0);
+        p.roll[i] = 0.01;
+        for _ in 0..200 {
+            verlet(&mut p, i, -0.05);
+            project_segments(&mut p, &s, 1);
+        }
+        let vx = p.x[i] - p.ox[i];
+        // the normal is (0, 1): rim speed roll * r * (n.y, -n.x) = (0.1, 0); rolling: v + rim = 0
+        assert!((vx + 0.1).abs() < 1e-6, "{}", vx);
+    }
+
+    // a turning point pressed on a free edge drives the edge the other way, momentum kept
+    #[test]
+    fn a_turning_point_drives_an_edge_and_keeps_momentum() {
+        let mut p = Points::default();
+        let a = p.add(-10.0, 0.0, 1.0, 0.0);
+        let b = p.add(10.0, 0.0, 1.0, 0.0);
+        let c = p.add(0.0, 4.5, 0.5, 5.0);
+        p.mask[c] = 4;
+        p.oy[c] = 5.0;
+        p.roll[c] = 0.1;
+        let mut e = Edges::default();
+        e.add(a, b, 4, 0.5);
+        let mom = |p: &Points| (0..3).map(|i| (p.x[i] - p.ox[i]) / p.w[i]).sum::<f64>();
+        assert_eq!(project_edges(&mut p, &e, 1), 1);
+        assert!(mom(&p).abs() < 1e-9, "{}", mom(&p));
+        let (vc, va) = (p.x[c] - p.ox[c], p.x[a] - p.ox[a]);
+        assert!(vc * va < 0.0 && vc.abs() > 1e-6, "{} {}", vc, va);
     }
 
     #[test]

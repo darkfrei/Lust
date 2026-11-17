@@ -10,7 +10,7 @@ return {
     lambda = 'num', force_max = 'num',
     x1 = 'num', y1 = 'num', x2 = 'num', y2 = 'num', friction = 'num',
     catenary_a = 'num', catenary_x0 = 'num', catenary_y0 = 'num', sag = 'num',
-    linear_density = 'num', min_slack = 'num', tension = 'num', strength = 'num', damping = 'num', ready = 'num', mass0 = 'num', born = 'num', broken = 'num', weighs = 'num', level = 'num', dscale = 'num', doomed = 'num',
+    linear_density = 'num', min_slack = 'num', tension = 'num', strength = 'num', damping = 'num', ready = 'num', mass0 = 'num', born = 'num', broken = 'num', weighs = 'num', level = 'num', dscale = 'num', spin = 'num', phase = 'num', doomed = 'num',
   },
   entities = {
     app = {ready = 0, level = 1, dscale = 0.01},

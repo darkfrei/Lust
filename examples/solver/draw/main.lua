@@ -68,6 +68,11 @@ return function()
       gfx.rect(ax[i] - 6, ay[i] - 6, 12, 12, '#fa3')
     elseif al[i] == 16 then
       gfx.circle(ax[i], ay[i], ar[i], '#f66')
+      -- the phase of the wheel: a line from the centre to the rim
+      local ph = ecs.get(ids[i], 'phase')
+      if ph then
+        gfx.line(ax[i], ay[i], ax[i] + math.cos(ph) * ar[i], ay[i] + math.sin(ph) * ar[i], 2, '#fff')
+      end
     elseif ecs.get(ids[i], 'broken') == 1 then
       -- the new end of a broken half: half the size of a joint, dark brown
       gfx.circle(ax[i], ay[i], 2, '#5a3a1e')
@@ -90,5 +95,6 @@ return function()
     gfx.text(b[1] + 8, 14, 12, '#dde', b[3])
   end
   gfx.rect(480, 38, 188, 24, '#24385a')
-  gfx.text(488, 44, 12, '#dde', string.format('Turn friction [D]: %d %%', math.floor((ecs.get('app', 'dscale') or 1) * 100 + 0.5)))
+  gfx.text(20, 582, 12, '#aab', 'A / D: turn the wheel')
+  gfx.text(488, 44, 12, '#dde', string.format('Turn friction [F]: %d %%', math.floor((ecs.get('app', 'dscale') or 1) * 100 + 0.5)))
 end
