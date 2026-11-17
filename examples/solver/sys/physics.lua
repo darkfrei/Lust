@@ -39,7 +39,8 @@ local function build()
   point('road_r', 500, 300, 0, 0, 1, 1)
   local prev = 'road_l'
   for i = 1, N do
-    point('joint_' .. i, 100 + i * 40, 300, 0.1, 3, 8, 1, 0.996)
+    -- the road joints are 4 times heavier than the cable joint: mass 40, inv_mass 0.025
+    point('joint_' .. i, 100 + i * 40, 300, 0.025, 3, 8, 1, 0.996)
     link('beam_' .. i, prev, 'joint_' .. i, 40, 0, 0, 4)
     prev = 'joint_' .. i
   end
