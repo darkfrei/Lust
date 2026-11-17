@@ -37,11 +37,12 @@ end
 -- longer (a rope), comp is the softness (0 is hard). road links have a layer (the wheel rides on them)
 -- strength is the load the part carries (in the same units as force_max and tension) before it
 -- would break; nothing breaks yet, the drawing only colors the load against it
-local function link(name, a, b, rest, comp, mode, layer, strength)
+local function link(name, a, b, rest, comp, mode, layer, strength, weighs)
   local c = {node_a = ecs.id(a), node_b = ecs.id(b), rest_len = rest, compliance = comp,
     mode = mode, lambda = 0, force_max = 0, strength = strength}
-  -- a road link is a beam: it has a weight per length and a layer (the wheel rides on it)
-  if layer then c.layer = layer c.friction = 0.8 c.linear_density = DENS end
+  -- a road link has a layer (the wheel rides on it). a beam (weighs) has a weight per length
+  if layer then c.layer = layer c.friction = 0.8 end
+  if weighs then c.linear_density = DENS c.weighs = 1 end
   ecs.spawn(name, c)
 end
 
@@ -64,12 +65,12 @@ local function beam_strength(i)
 end
 
 -- the mass of every free joint = its own mass0 + half the weight (length * linear_density) of
--- each beam on it. cables are not beams here: the solver loads their ends with their weight
+-- each beam (a link with weighs) on it. cables are not beams here: the solver loads their ends with their weight
 local function remass()
   local n, ids, m0 = ecs.query('mass0')
   local sum = {}
   for i = 1, n do sum[ids[i]] = m0[i] end
-  local k, _, a, b, rest, dens = ecs.query('node_a', 'node_b', 'rest_len', 'linear_density', 'layer')
+  local k, _, a, b, rest, dens = ecs.query('node_a', 'node_b', 'rest_len', 'linear_density', 'weighs')
   for i = 1, k do
     local m = rest[i] * dens[i] / 2
     local ea, eb = math.tointeger(a[i]), math.tointeger(b[i])
@@ -104,7 +105,8 @@ local function break_part(id)
       c.mode = 1 c.catenary_a = 0 c.catenary_x0 = 0 c.catenary_y0 = 0 c.sag = 0
       c.linear_density = rho c.min_slack = 0.001 c.tension = 0
     else
-      c.mode = 0 c.layer = 4 c.friction = 0.8 c.linear_density = DENS
+      c.mode = 0 c.layer = ecs.get(id, 'layer') c.linear_density = DENS c.weighs = 1
+      if c.layer then c.friction = 0.8 end
     end
     ecs.spawn(c)
   end
@@ -134,8 +136,9 @@ local function judge()
   if worst then ecs.set(worst, 'doomed', 1) end
 end
 
--- restart: every point and link goes, build makes the level again on the next tick
-local function restart()
+-- restart or change of level: every point and link goes, build makes the level again
+local function restart(level)
+  ecs.set('app', 'level', level)
   local n, ids = ecs.query('node_a')
   for i = 1, n do ecs.kill(ids[i]) end
   n, ids = ecs.query('x', 'y')
@@ -162,7 +165,7 @@ local function sweep()
   remass()
 end
 
-local function build()
+local function build_suspension()
   -- the road: fixed at both ends, 10 links of 40.5
   point('road_l', 100, 300, 0, 0, 1, 1)
   point('road_r', 500, 300, 0, 0, 1, 1)
@@ -170,10 +173,10 @@ local function build()
   for i = 1, N do
     -- inv_mass is set by remass at the end of build
     point('joint_' .. i, 100 + i * 40, 300, 1, 3, 8, 1, 0.996, JOINT0)
-    link('beam_' .. i, prev, 'joint_' .. i, BEAM, 0, 1, 4, beam_strength(i))
+    link('beam_' .. i, prev, 'joint_' .. i, BEAM, 0, 1, 4, beam_strength(i), true)
     prev = 'joint_' .. i
   end
-  link('beam_' .. (N + 1), prev, 'road_r', BEAM, 0, 1, 4, beam_strength(N + 1))
+  link('beam_' .. (N + 1), prev, 'road_r', BEAM, 0, 1, 4, beam_strength(N + 1), true)
   -- the cable: fixed at both ends, one free joint in the middle
   point('cable_l', 100, 100, 0, 0, 1, 1)
   point('cable_r', 500, 100, 0, 0, 1, 1)
@@ -183,10 +186,51 @@ local function build()
   -- the only hanger: a rope (it sags when slack, it never pushes) from the cable joint to the
   -- middle of the road. a strut (mode 2) would be the one that gets compressed
   cable('hanger', 'hang', 'joint_5', 110, 6400000)
-  -- the wheel and the mouse: a soft spring of length 0 pulls the wheel to the mouse
+end
+
+
+-- the second bridge: a truss (road and struts only, no cable). the road is the bottom chord
+-- (rigid beams, they carry a push too), over it a top chord, verticals and diagonals, a triangle
+-- in every panel. 10 panels of 40, height 60
+local function build_truss()
+  point('road_l', 100, 300, 0, 0, 1, 1)
+  point('road_r', 500, 300, 0, 0, 1, 1)
+  local H = 60
+  local at = {road_l = {100, 300}, road_r = {500, 300}}
+  for i = 1, 9 do
+    local x = 100 + i * 40
+    point('b' .. i, x, 300, 1, 3, 8, 1, 0.996, JOINT0)
+    point('t' .. i, x, 300 - H, 1, 3, 8, 1, 0.996, JOINT0)
+    at['b' .. i], at['t' .. i] = {x, 300}, {x, 300 - H}
+  end
+  local function b(i) if i == 0 then return 'road_l' elseif i == 10 then return 'road_r' end return 'b' .. i end
+  local count = 0
+  local function member(name, a, c, layer)
+    local dx, dy = at[a][1] - at[c][1], at[a][2] - at[c][2]
+    count = count + 1
+    link(name, a, c, math.sqrt(dx * dx + dy * dy), 0, 0, layer, beam_strength(count), true)
+  end
+  for i = 0, 9 do member('road_' .. i, b(i), b(i + 1), 4) end
+  for i = 1, 8 do member('top_' .. i, 't' .. i, 't' .. (i + 1)) end
+  for i = 1, 9 do member('post_' .. i, b(i), 't' .. i) end
+  member('diag_0', 'road_l', 't1')
+  for i = 1, 8 do
+    if i < 5 then member('diag_' .. i, b(i), 't' .. (i + 1)) else member('diag_' .. i, 't' .. i, b(i + 1)) end
+  end
+  member('diag_9', 't9', 'road_r')
+end
+
+-- the wheel and the mouse, the same in every level: a soft spring of length 0 pulls the wheel
+-- to the mouse
+local function build_wheel()
   point('wheel', 200, 250, 0.02, 12, 16, 23, 0.984)
   point('mouse', 200, 250, 0, 0, 32, 0)
   link('drag', 'mouse', 'wheel', 0, 0.00002, 0, nil)
+end
+
+local function build()
+  if ecs.get('app', 'level') == 2 then build_truss() else build_suspension() end
+  build_wheel()
   remass()
   ecs.set('app', 'born', ecs.tick())
   ecs.set('app', 'ready', 1)
@@ -201,7 +245,9 @@ local function substep(h)
 end
 
 return function(dt)
-  if input.pressed('r') then restart() end
+  local level = ecs.get('app', 'level') or 1
+  if input.pressed('1') then restart(1) elseif input.pressed('2') then restart(2)
+  elseif input.pressed('r') then restart(level) end
   if ecs.get('app', 'ready') ~= 1 then build() end
   -- the mouse marker sits where the pointer is (before the first move the pointer reads 0, 0:
   -- then the marker stays where it was)
