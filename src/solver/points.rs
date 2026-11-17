@@ -237,4 +237,25 @@ mod tests {
         p.x[0] = f64::NAN;
         assert_eq!(project_points(&mut p, &Links::default(), 1), 0);
     }
+
+    #[test]
+    fn joints_hit_only_the_ground_and_pass_each_other_and_wheels() {
+        // the convention: a joint is layer 8 mask 1, a wheel layer 16 mask 23
+        let mut p = Points::default();
+        let (j1, j2, wheel, ball) = (p.add(0.0, 0.0, 1.0, 5.0), p.add(6.0, 0.0, 1.0, 5.0), p.add(3.0, 0.0, 1.0, 5.0), p.add(3.0, 3.0, 1.0, 5.0));
+        for j in [j1, j2] {
+            p.layer[j] = 8;
+            p.mask[j] = 1;
+        }
+        for w in [wheel, ball] {
+            p.layer[w] = 16;
+            p.mask[w] = 23;
+        }
+        let before = (p.x[j1], p.x[j2]);
+        let n = project_points(&mut p, &Links::default(), 1);
+        assert_eq!(n, 1, "only the wheel and the ball push each other");
+        assert_eq!((p.x[j1], p.x[j2]), before);
+        assert_eq!(p.contact[j1], 0.0);
+        assert_eq!(p.contact[wheel], 1.0);
+    }
 }

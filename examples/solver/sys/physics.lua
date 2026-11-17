@@ -1,7 +1,9 @@
 -- builds the scene once (the first tick), then steps the solver: 16 substeps of one pass each
 local N = 9
 
--- a point: x y old_x old_y inv_mass radius layer mask (w = 0 is fixed)
+-- a point: x y old_x old_y inv_mass radius layer mask (w = 0 is fixed). layer is what the point
+-- is (8 a joint, 16 a ball or wheel), mask is what it hits: 1 ground, 2 semi-solid, 4 road,
+-- 16 balls and wheels. a joint hits only the ground, so joints never push each other
 local function point(name, x, y, w, r, layer, mask)
   ecs.spawn(name, {x = x, y = y, old_x = x, old_y = y, inv_mass = w, radius = r,
     layer = layer, mask = mask, contact = 0, contact_nx = 0, contact_ny = 0})
@@ -21,12 +23,12 @@ local function build()
   local prev = 'anchor_l'
   for i = 1, N do
     local name = 'joint_' .. i
-    point(name, 100 + i * 40, 300, 1, 3, 1, 1)
+    point(name, 100 + i * 40, 300, 1, 3, 8, 1)
     link('beam_' .. i, prev, name, 40, 0, 0, 4)
     prev = name
   end
   link('beam_' .. (N + 1), prev, 'anchor_r', 40, 0, 0, 4)
-  point('ball', 300, 200, 1, 12, 2, 7)
+  point('ball', 300, 200, 1, 12, 16, 23)
   -- a cable above: two anchors, a link that only holds the length, and a catenary to draw
   point('cable_l', 100, 100, 0, 0, 1, 1)
   point('cable_r', 500, 100, 0, 0, 1, 1)
