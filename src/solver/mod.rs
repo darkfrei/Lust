@@ -4,6 +4,7 @@
 // files: data (arrays), access (the glue to a World), integrate, distance, contact, query,
 // catenary (the math over the arrays), and this file: the lua functions
 pub mod access;
+pub mod angular;
 pub mod catenary;
 pub mod contact;
 pub mod data;
@@ -117,6 +118,7 @@ pub fn attach(host: &Host) -> Result<(), String> {
     let sc = Rc::new(RefCell::new(Scratch::default()));
     reg(host, &sc, "integrate_verlet", integrate_verlet)?;
     reg(host, &sc, "solve_distance", solve_distance)?;
+    reg(host, &sc, "damp_angular", damp_angular)?;
     reg(host, &sc, "project_segments", project_segments)?;
     reg(host, &sc, "project_edges", project_edges)?;
     reg(host, &sc, "project_points", project_points)?;
@@ -169,6 +171,22 @@ fn solve_distance(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i6
         let n = distance::solve(&mut s.pts, &mut s.links, dt, iterations);
         access::scatter_points(w, s, &pc, POS)?;
         access::scatter_links(w, s, &lc)?;
+        Ok(n as i64)
+    })
+}
+
+fn damp_angular(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
+    let spin = num_arg(args, 0, "spin")?;
+    let bend = num_arg(args, 1, "bend")?;
+    writable(w)?;
+    released(s, |s| {
+        let Some(pc) = access::gather_points(w, s) else { return Ok(0) };
+        let Some(_) = access::gather_links(w, s) else { return Ok(0) };
+        if s.pts.is_empty() || s.links.is_empty() {
+            return Ok(0);
+        }
+        let n = angular::damp(&mut s.pts, &s.links, spin, bend);
+        access::scatter_points(w, s, &pc, OLD)?;
         Ok(n as i64)
     })
 }
@@ -424,9 +442,10 @@ mod tests {
         h
     }
 
-    const NAMES: [&str; 12] = [
+    const NAMES: [&str; 13] = [
         "integrate_verlet",
         "solve_distance",
+        "damp_angular",
         "project_segments",
         "project_edges",
         "project_points",

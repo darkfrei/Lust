@@ -27,6 +27,9 @@ pub struct Points {
     pub grp: Vec<u32>,
     // how much of the speed a point keeps per step; NaN means the value given to the call
     pub damp: Vec<f64>,
+    // how much of the turning of one link against another at this point is taken per step; NaN
+    // means the value given to the call (damp_angular)
+    pub bend: Vec<f64>,
     pub contact: Vec<f64>,
     pub cnx: Vec<f64>,
     pub cny: Vec<f64>,
@@ -53,6 +56,7 @@ impl Points {
         self.mask.clear();
         self.grp.clear();
         self.damp.clear();
+        self.bend.clear();
         self.contact.clear();
         self.cnx.clear();
         self.cny.clear();
@@ -73,6 +77,7 @@ impl Points {
         self.mask.push(1);
         self.grp.push(0);
         self.damp.push(f64::NAN);
+        self.bend.push(f64::NAN);
         self.contact.push(0.0);
         self.cnx.push(0.0);
         self.cny.push(0.0);
@@ -94,6 +99,9 @@ pub struct Links {
     pub lambda: Vec<f64>,
     // in and out: the biggest force |lambda| / dt^2 since the program zeroed it
     pub fmax: Vec<f64>,
+    // how much of the turning of the link (the speed of its ends across it) is taken per step;
+    // NaN means the value given to the call (damp_angular)
+    pub ang: Vec<f64>,
 }
 
 impl Links {
@@ -114,6 +122,7 @@ impl Links {
         self.mode.clear();
         self.lambda.clear();
         self.fmax.clear();
+        self.ang.clear();
     }
 
     pub fn add(&mut self, a: usize, b: usize, rest: f64, comp: f64, mode: u8) -> usize {
@@ -126,6 +135,7 @@ impl Links {
         self.mode.push(mode);
         self.lambda.push(0.0);
         self.fmax.push(0.0);
+        self.ang.push(f64::NAN);
         i
     }
 }

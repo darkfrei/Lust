@@ -179,7 +179,7 @@ fn clean_nonneg(v: f64) -> f64 {
 
 // ---------- points ----------
 
-fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64, damp: f64) {
+fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64, damp: [f64; 2]) {
     let p = &mut s.pts;
     p.ent.push(e);
     p.x.push(v[0]);
@@ -192,7 +192,8 @@ fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64, 
     p.mask.push(to_bits(opt3[2]));
     p.grp.push(to_bits(group));
     // only 0..1 is a speed factor; anything else (or no column) is NaN: the call's value
-    p.damp.push(if (0.0..=1.0).contains(&damp) { damp } else { f64::NAN });
+    p.damp.push(if (0.0..=1.0).contains(&damp[0]) { damp[0] } else { f64::NAN });
+    p.bend.push(if (0.0..=1.0).contains(&damp[1]) { damp[1] } else { f64::NAN });
     p.contact.push(0.0);
     p.cnx.push(0.0);
     p.cny.push(0.0);
@@ -211,11 +212,11 @@ pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
     s.pts.clear();
     let req = need(world, ["x", "y", "old_x", "old_y", "inv_mass"])?;
     let (r, l, m) = (find(world, "radius"), find(world, "layer"), find(world, "mask"));
-    let (grp, damp) = (find(world, "group"), find(world, "damping"));
+    let (grp, damp, bend) = (find(world, "group"), find(world, "damping"), find(world, "bend_damping"));
     let (cc, cx, cy) = (find(world, "contact"), find(world, "contact_nx"), find(world, "contact_ny"));
     for &e in shortest(world, &req) {
         if let Some(v) = read_all(world, &req, e) {
-            push_point(s, e, v, [opt(world, r, e, 0.0), opt(world, l, e, 1.0), opt(world, m, e, 1.0)], opt(world, grp, e, 0.0), opt(world, damp, e, f64::NAN));
+            push_point(s, e, v, [opt(world, r, e, 0.0), opt(world, l, e, 1.0), opt(world, m, e, 1.0)], opt(world, grp, e, 0.0), [opt(world, damp, e, f64::NAN), opt(world, bend, e, f64::NAN)]);
             // the contact of an earlier call stays (project_edges, then project_segments in
             // one substep must not wipe each other); only integrate_verlet clears it
             let k = s.pts.contact.len() - 1;
@@ -308,7 +309,7 @@ pub fn gather_links(world: &World, s: &mut Scratch) -> Option<LinkCols> {
     s.links.clear();
     let req = need(world, ["node_a", "node_b", "rest_len"])?;
     let (comp, mode) = (find(world, "compliance"), find(world, "mode"));
-    let (lam, fmax) = (find(world, "lambda"), find(world, "force_max"));
+    let (lam, fmax, ang) = (find(world, "lambda"), find(world, "force_max"), find(world, "ang_damping"));
     for &e in shortest(world, &req) {
         let Some([va, vb, rest]) = read_all(world, &req, e) else { continue };
         let Some((a, b)) = ends(world, &s.slot_of, va, vb) else { continue };
@@ -319,6 +320,8 @@ pub fn gather_links(world: &World, s: &mut Scratch) -> Option<LinkCols> {
         s.links.ent[k] = e;
         s.links.lambda[k] = 0.0;
         s.links.fmax[k] = opt(world, fmax, e, 0.0);
+        let g = opt(world, ang, e, f64::NAN);
+        s.links.ang[k] = if (0.0..=1.0).contains(&g) { g } else { f64::NAN };
     }
     Some(LinkCols { lambda: lam, fmax })
 }

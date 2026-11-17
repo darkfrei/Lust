@@ -15,6 +15,11 @@ local JOINT0 = 1.0
 -- road is drawn 5 px wide), and how much speed it keeps per substep
 local DEBRIS_R = 1.25
 local DEBRIS_DAMP = 0.995
+-- friction against turning, per substep: SPIN is the share of the turning of a link (its ends
+-- moving across it) that is taken, BEND the share of the turning of one link against the next at
+-- a joint (hinge friction)
+local SPIN = 0.005
+local BEND = 0.05
 -- the start of the scene is a shock (a straight, taut road and cable begin to hang, forces of
 -- 10^7 and more in the first ticks), so nothing is judged before this many ticks after the level was built
 local WARMUP = 30
@@ -240,6 +245,7 @@ local function substep(h)
   ecs.integrate_verlet(h, 0, 980, 0.999)
   ecs.apply_catenary_load(h, 980)
   ecs.solve_distance(h, 1)
+  ecs.damp_angular(SPIN, BEND)
   ecs.project_edges(1)
   ecs.project_segments(1)
 end
