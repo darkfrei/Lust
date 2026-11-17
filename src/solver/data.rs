@@ -113,6 +113,9 @@ pub struct Links {
     // how much of the turning of the link (the speed of its ends across it) is taken per step;
     // NaN means the value given to the call (damp_angular)
     pub ang: Vec<f64>,
+    // the damping of a soft link (a spring), in seconds: it slows the ends moving apart or together
+    // along the link (xpbd damping, beta). 0 is none; a rigid link (compliance 0) is not damped
+    pub sdamp: Vec<f64>,
 }
 
 impl Links {
@@ -134,6 +137,7 @@ impl Links {
         self.lambda.clear();
         self.fmax.clear();
         self.ang.clear();
+        self.sdamp.clear();
     }
 
     pub fn add(&mut self, a: usize, b: usize, rest: f64, comp: f64, mode: u8) -> usize {
@@ -147,6 +151,7 @@ impl Links {
         self.lambda.push(0.0);
         self.fmax.push(0.0);
         self.ang.push(f64::NAN);
+        self.sdamp.push(0.0);
         i
     }
 }

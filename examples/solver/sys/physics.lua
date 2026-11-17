@@ -239,6 +239,7 @@ local function build_wheel()
   ecs.set('wheel', 'inertia', 3600)
   point('mouse', 200, 250, 0, 0, 32, 0)
   link('drag', 'mouse', 'wheel', 0, 0.00002, 0, nil)
+  ecs.set('drag', 'spring_damping', 0)
 end
 
 local function build()
@@ -259,6 +260,9 @@ local SPIN_MAX = 20
 -- the softness of the spring to the mouse: held, and let go (so soft it pulls nothing)
 local DRAG_SOFT = 0.00002
 local DRAG_OFF = 1000000
+-- the damper of that spring, in seconds: critical for the wheel (2 * sqrt(mass * softness) =
+-- 2 * sqrt(50 * 0.00002) = 0.063), so a click pulls the wheel to the mouse without swinging past
+local DRAG_DAMP = 0.063
 local SPIN_ACC = 200
 local function drive_wheel(dt)
   local w = ecs.get('wheel', 'spin')
@@ -300,7 +304,9 @@ return function(dt)
   local mx, my, held = input.mouse()
   -- the spring to the mouse pulls the wheel only while the button is held (not over the buttons
   -- at the top): else it is soft as nothing and the wheel is free (it falls, rolls, drives on A/D)
-  ecs.set('drag', 'compliance', (held and my > 70) and DRAG_SOFT or DRAG_OFF)
+  local drag = held and my > 70
+  ecs.set('drag', 'compliance', drag and DRAG_SOFT or DRAG_OFF)
+  ecs.set('drag', 'spring_damping', drag and DRAG_DAMP or 0)
   if mx ~= 0 or my ~= 0 then
     ecs.set('mouse', 'x', mx) ecs.set('mouse', 'y', my)
     ecs.set('mouse', 'old_x', mx) ecs.set('mouse', 'old_y', my)

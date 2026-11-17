@@ -320,6 +320,7 @@ pub fn gather_links(world: &World, s: &mut Scratch) -> Option<LinkCols> {
     let req = need(world, ["node_a", "node_b", "rest_len"])?;
     let (comp, mode) = (find(world, "compliance"), find(world, "mode"));
     let (lam, fmax, ang) = (find(world, "lambda"), find(world, "force_max"), find(world, "ang_damping"));
+    let sdamp = find(world, "spring_damping");
     for &e in shortest(world, &req) {
         let Some([va, vb, rest]) = read_all(world, &req, e) else { continue };
         let Some((a, b)) = ends(world, &s.slot_of, va, vb) else { continue };
@@ -332,6 +333,7 @@ pub fn gather_links(world: &World, s: &mut Scratch) -> Option<LinkCols> {
         s.links.fmax[k] = opt(world, fmax, e, 0.0);
         let g = opt(world, ang, e, f64::NAN);
         s.links.ang[k] = if (0.0..=1.0).contains(&g) { g } else { f64::NAN };
+        s.links.sdamp[k] = clean_nonneg(opt(world, sdamp, e, 0.0));
     }
     Some(LinkCols { lambda: lam, fmax })
 }

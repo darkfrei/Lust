@@ -18,7 +18,7 @@ pub fn solve(p: &mut Points, l: &mut Links, dt: f64, iterations: usize) -> usize
     let dt2 = dt * dt;
     for _ in 0..iterations {
         for i in 0..n_links {
-            solve_link(p, l, i, n_points, dt2);
+            solve_link(p, l, i, n_points, dt);
         }
     }
     // links never solved still hold nan: they count nothing and get lambda 0
@@ -50,7 +50,8 @@ fn link_count(l: &Links) -> usize {
 }
 
 // one Gauss-Seidel step of one link; true when it changed lambda and the points
-fn solve_link(p: &mut Points, l: &mut Links, i: usize, n_points: usize, dt2: f64) -> bool {
+fn solve_link(p: &mut Points, l: &mut Links, i: usize, n_points: usize, dt: f64) -> bool {
+    let dt2 = dt * dt;
     let a = l.a[i] as usize;
     let b = l.b[i] as usize;
     if a == b || a >= n_points || b >= n_points {
@@ -68,12 +69,18 @@ fn solve_link(p: &mut Points, l: &mut Links, i: usize, n_points: usize, dt2: f64
     let at = if dt2 > 0.0 { l.comp[i] / dt2 } else { 0.0 };
     let wa = p.w[a];
     let wb = p.w[b];
-    let w_sum = wa + wb + at;
+    // damping of a spring: the force is k * C + c * dC/dt with beta = c / k (seconds), so the
+    // constraint is C + alpha~ * lambda + beta * (n . (x - old)) / dt = 0 and gamma = beta / dt.
+    // a rigid link (at = 0) is not damped: it would no longer hold its length
+    let beta = l.sdamp.get(i).copied().unwrap_or(0.0);
+    let gamma = if dt > 0.0 && at > 0.0 && beta > 0.0 && beta.is_finite() { beta / dt } else { 0.0 };
+    let w_sum = (1.0 + gamma) * (wa + wb) + at;
     if !w_sum.is_finite() || w_sum <= 0.0 {
         return false;
     }
     let old = if l.lambda[i].is_nan() { 0.0 } else { l.lambda[i] };
-    let dl = (-c - at * old) / w_sum;
+    let vrel = if gamma > 0.0 { nx * ((p.x[a] - p.ox[a]) - (p.x[b] - p.ox[b])) + ny * ((p.y[a] - p.oy[a]) - (p.y[b] - p.oy[b])) } else { 0.0 };
+    let dl = (-c - at * old - gamma * vrel) / w_sum;
     let sum = old + dl;
     let new = match l.mode[i] {
         1 => sum.min(0.0),
@@ -112,6 +119,29 @@ mod tests {
         let mut l = Links::default();
         l.add(0, 1, rest, comp, mode);
         (p, l)
+    }
+
+    // a mass on a soft spring of length 0 to a fixed point, let go 10 away: without damping it
+    // swings through to about -10, with critical damping (beta = 2 sqrt(m / k)) it never passes
+    #[test]
+    fn a_damped_spring_does_not_overshoot() {
+        let run = |beta: f64| {
+            let (mut p, mut l) = pair(0.0, 10.0, 0.0, 0.02, 0.0, 0.00002, 0);
+            l.sdamp[0] = beta;
+            let h = 1.0 / 960.0;
+            let mut least = f64::INFINITY;
+            for _ in 0..960 {
+                let (x, ox) = (p.x[1], p.ox[1]);
+                p.ox[1] = x;
+                p.x[1] = x + (x - ox);
+                solve(&mut p, &mut l, h, 1);
+                least = least.min(p.x[1]);
+            }
+            least
+        };
+        assert!(run(0.0) < -9.0, "{}", run(0.0));
+        let beta = 2.0 * (50.0f64 * 0.00002).sqrt();
+        assert!(run(beta) > -0.05, "{}", run(beta));
     }
 
     #[test]

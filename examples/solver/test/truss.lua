@@ -66,4 +66,14 @@ keys('a')
 step(90)
 assert(get('wheel', 'spin') < 0 and get('wheel', 'old_x') > get('wheel', 'x'), 'A does not drive it back')
 keys()
+-- a click far from the wheel pulls it to the mouse through a damped spring: it may pass the mouse
+-- a little, never by much (without the damper it swung past by 155 px)
+press('1') step(1)
+mouse(200, 250, false) step(120)
+mouse(400, 200, true)
+local most = 0
+for i = 1, 120 do step(1) most = math.max(most, get('wheel', 'x')) end
+assert(most < 425, 'the wheel swings past the mouse: ' .. most)
+assert(math.abs(get('wheel', 'x') - 400) < 3 and math.abs(get('wheel', 'y') - 200) < 3, 'the wheel is not at the mouse')
+mouse(400, 200, false) step(1)
 draw()

@@ -246,6 +246,7 @@ Link (needs `node_a, node_b, rest_len`; the ends are `ecs.id` numbers):
 | `compliance` | 0 | softness; 0 is rigid |
 | `mode` | 0 | 0 keeps the length, 1 not longer (a rope), 2 not shorter (a strut) |
 | `ang_damping` | the call's | share of its turning taken per substep |
+| `spring_damping` | 0 | a damper on a soft link, seconds (c / k); critical for a mass m: 2 * sqrt(m * compliance) |
 | `lambda` | written | the multiplier of the last call |
 | `force_max` | written | the biggest force since the program zeroed it (`ecs.fill('force_max', 0)`) |
 | `layer` (+ `friction`, `radius`, `group`) | | with a layer the link is also an **edge**: a movable barrier, a capsule of `radius` |
