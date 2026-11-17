@@ -253,6 +253,15 @@ impl Column {
         &mut self.vals
     }
 
+    // the value of one entity, to write it in place: for a rust system of the program (see
+    // World::touch_column, which a system calls first)
+    pub fn get_mut(&mut self, index: u32) -> Option<&mut f64> {
+        match self.place(index) {
+            Some(p) => Some(&mut self.vals[p]),
+            None => None,
+        }
+    }
+
     pub fn reserve(&mut self, n: usize) {
         self.ents.reserve(n);
         self.vals.reserve(n);
@@ -1233,6 +1242,18 @@ impl World {
     // for a rust system of the program: past rights, undo and limits
     pub fn column_mut(&mut self, col: usize) -> &mut Column {
         &mut self.cols[col]
+    }
+
+    // before a rust system writes a column through column_mut: refuses in a read-only world
+    // and when the current role may not write the column, and keeps the column for the undo of
+    // a failed run (once per call, not per value)
+    pub fn touch_column(&mut self, col: usize) -> Result<(), String> {
+        if self.live_col(col).is_none() {
+            return Err(String::from("bad_column"));
+        }
+        self.check_col_write(col)?;
+        self.record_column(col);
+        Ok(())
     }
 
     // a num value hidden from the code that runs now

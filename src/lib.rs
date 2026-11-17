@@ -16,6 +16,8 @@
 //   screen   what draw code draws (a frame as text) and the keys and mouse of the person
 //   project  a folder of lua files that makes a world; a change of a file is hot; every
 //            project has lib.ui (buttons, menus, labels) built in
+//   solver   (optional) a solver of constraints over num columns: points, links, barriers,
+//            catenary cables (ecs.integrate_verlet, ecs.solve_distance and more)
 //   launcher the list of games `lust` shows when it is started with a double click
 //   driver   lua that runs a world from outside: tries and tests of a project
 //   mcp      (optional) a door for an AI over the Model Context Protocol: it sees what its
@@ -41,6 +43,8 @@ pub mod link;
 pub mod project;
 pub mod saves;
 pub mod screen;
+#[cfg(feature = "solver")]
+pub mod solver;
 pub mod store;
 
 // leave it out with default-features = false, or delete src/mcp.rs and these two lines

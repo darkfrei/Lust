@@ -11,9 +11,13 @@ keywords = ["ecs", "lua", "sandbox", "journal", "mcp"]
 # block [[example]] door at the end
 # web: a display in the browser (src/web.rs), std only. lust dev and lust run need both
 [features]
-default = ["mcp", "web"]
+default = ["mcp", "web", "solver"]
 mcp = []
 web = []
+# solver: a solver of constraints over num columns (src/solver/), ecs.integrate_verlet and
+# the rest. to remove it: delete the folder src/solver, the solver lines in src/lib.rs and
+# src/project.rs, and this line
+solver = []
 
 [dependencies]
 mlua = { version = "0.12", features = ["lua54", "vendored", "serialize"] }

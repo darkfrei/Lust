@@ -376,6 +376,8 @@ pub fn build(files: &BTreeMap<String, String>) -> Result<(App, Desc, Vec<String>
     let host = Host::with_spec(desc.spec.clone()).map_err(|e| reason_of(&e))?;
     let screen = screen::attach(&host)?;
     let saves = crate::saves::attach(&host)?;
+    #[cfg(feature = "solver")]
+    crate::solver::attach(&host)?;
     if let Some(ms) = desc.run_ms {
         host.budget.set_run_ms(ms);
     }
