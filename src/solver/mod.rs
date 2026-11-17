@@ -15,6 +15,8 @@ pub mod points;
 pub mod query;
 #[cfg(test)]
 mod scene_tests;
+#[cfg(test)]
+mod bench;
 
 use std::cell::RefCell;
 use std::rc::Rc;

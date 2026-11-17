@@ -31,7 +31,7 @@ local WORLD = {x0 = -200, x1 = 1000, y1 = 900}
 
 -- a point: x y old_x old_y inv_mass radius layer mask (w = 0 is fixed: a rigid fixing).
 -- damping is the share of speed a point keeps per substep (nil: the call's 0.999). joints keep
--- 0.996 (4 times the loss of 0.999), the wheel 0.984 (16 times)
+-- 0.996 (4 times the loss of 0.999), the wheel 0.96 (40 times the loss of 0.999)
 -- inv_mass is 1 / mass: a joint 0.1 is a mass of 10, the wheel 0.02 is a mass of 50
 -- layer is what the point is (8 a joint, 16 a wheel, 32 the mouse marker), mask is what it hits:
 -- 1 ground, 2 semi-solid, 4 road, 16 wheels. a joint hits only the ground
@@ -231,7 +231,7 @@ end
 -- the wheel and the mouse, the same in every level: a soft spring of length 0 pulls the wheel
 -- to the mouse
 local function build_wheel()
-  point('wheel', 200, 250, 0.02, 12, 16, 23, 0.984)
+  point('wheel', 200, 250, 0.02, 12, 16, 23, 0.96)
   point('mouse', 200, 250, 0, 0, 32, 0)
   link('drag', 'mouse', 'wheel', 0, 0.00002, 0, nil)
 end
