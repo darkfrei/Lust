@@ -3,8 +3,9 @@
 -- the road, and a wheel that follows the mouse (a spring to a fixed point that sits at the
 -- mouse). 16 substeps of one pass each
 local N = 9
--- the road is a chain: its links are ropes (mode 1), they hold a pull and carry no push, so the
--- road cannot act as an arch. 10 links of 40.5 are 5 longer than the 400 between the fixings
+-- the road is a chain of beams of a fixed length (mode 0: a beam never gets shorter or longer;
+-- a rope, mode 1, would shorten when pressed). 10 beams of 40.5 are 5 longer than the 400 between
+-- the fixings, so the chain hangs in a sag
 local BEAM = 40.5
 -- every beam has a weight per length; half of it sits on each of its two joints. a joint has a
 -- small mass of its own (mass0) besides. so the mass of a joint is always computed from what is
@@ -18,8 +19,10 @@ local DEBRIS_DAMP = 0.995
 -- friction against turning, per substep: SPIN is the share of the turning of a link (its ends
 -- moving across it) that is taken, BEND the share of the turning of one link against the next at
 -- a joint (hinge friction)
+-- (the base values; the button 'Turn friction' scales both, 25 % at the start)
 local SPIN = 0.005
 local BEND = 0.05
+local FRICTION_STEPS = {0, 0.25, 0.5, 1}
 -- the start of the scene is a shock (a straight, taut road and cable begin to hang, forces of
 -- 10^7 and more in the first ticks), so nothing is judged before this many ticks after the level was built
 local WARMUP = 30
@@ -178,10 +181,10 @@ local function build_suspension()
   for i = 1, N do
     -- inv_mass is set by remass at the end of build
     point('joint_' .. i, 100 + i * 40, 300, 1, 3, 8, 1, 0.996, JOINT0)
-    link('beam_' .. i, prev, 'joint_' .. i, BEAM, 0, 1, 4, beam_strength(i), true)
+    link('beam_' .. i, prev, 'joint_' .. i, BEAM, 0, 0, 4, beam_strength(i), true)
     prev = 'joint_' .. i
   end
-  link('beam_' .. (N + 1), prev, 'road_r', BEAM, 0, 1, 4, beam_strength(N + 1), true)
+  link('beam_' .. (N + 1), prev, 'road_r', BEAM, 0, 0, 4, beam_strength(N + 1), true)
   -- the cable: fixed at both ends, one free joint in the middle
   point('cable_l', 100, 100, 0, 0, 1, 1)
   point('cable_r', 500, 100, 0, 0, 1, 1)
@@ -241,11 +244,11 @@ local function build()
   ecs.set('app', 'ready', 1)
 end
 
-local function substep(h)
+local function substep(h, scale)
   ecs.integrate_verlet(h, 0, 980, 0.999)
   ecs.apply_catenary_load(h, 980)
   ecs.solve_distance(h, 1)
-  ecs.damp_angular(SPIN, BEND)
+  ecs.damp_angular(SPIN * scale, BEND * scale)
   ecs.project_edges(1)
   ecs.project_segments(1)
 end
@@ -254,13 +257,23 @@ return function(dt)
   local level = ecs.get('app', 'level') or 1
   if input.pressed('1') then restart(1) elseif input.pressed('2') then restart(2)
   elseif input.pressed('r') then restart(level) end
-  -- the same by mouse: three buttons at the top right (draw/main.lua draws them at the same place)
+  -- D (or the button) goes to the next step of the turn friction: 0, 25, 50, 100 % of the base
+  if input.pressed('d') then
+    local now, nextv = ecs.get('app', 'dscale') or 1, FRICTION_STEPS[1]
+    for i, v in ipairs(FRICTION_STEPS) do if v > now + 1e-9 then nextv = v break end end
+    ecs.set('app', 'dscale', nextv)
+  end
+  -- the same by mouse: four buttons at the top right (draw/main.lua draws them at the same place)
   if input.pressed('mouse') then
     local cx, cy = input.mouse()
     if cy >= 8 and cy <= 32 then
       if cx >= 480 and cx < 570 then restart(1)
       elseif cx >= 578 and cx < 668 then restart(2)
       elseif cx >= 676 and cx < 760 then restart(level) end
+    elseif cy >= 38 and cy <= 62 and cx >= 480 and cx < 668 then
+      local now, nextv = ecs.get('app', 'dscale') or 1, FRICTION_STEPS[1]
+      for i, v in ipairs(FRICTION_STEPS) do if v > now + 1e-9 then nextv = v break end end
+      ecs.set('app', 'dscale', nextv)
     end
   end
   if ecs.get('app', 'ready') ~= 1 then build() end
@@ -273,7 +286,8 @@ return function(dt)
   end
   break_doomed()
   ecs.fill('force_max', 0)
-  for i = 1, 16 do substep(dt / 16) end
+  local scale = ecs.get('app', 'dscale') or 1
+  for i = 1, 16 do substep(dt / 16, scale) end
   ecs.update_catenary(980)
   if ecs.tick() - ecs.get('app', 'born') > WARMUP then judge() end
   sweep()

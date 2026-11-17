@@ -89,4 +89,6 @@ return function()
     gfx.rect(b[1], 8, b[2], 24, b[4] and '#3a5a8a' or '#24385a')
     gfx.text(b[1] + 8, 14, 12, '#dde', b[3])
   end
+  gfx.rect(480, 38, 188, 24, '#24385a')
+  gfx.text(488, 44, 12, '#dde', string.format('Turn friction [D]: %d %%', math.floor((ecs.get('app', 'dscale') or 1) * 100 + 0.5)))
 end

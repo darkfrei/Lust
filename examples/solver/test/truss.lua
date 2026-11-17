@@ -33,4 +33,13 @@ step(1)
 mouse(700, 20, false)
 step(2)
 assert(get('post_5', 'rest_len') ~= nil and get('post_5', 'strength') > 1000000, 'the Restart button did not work')
+-- the friction button steps 25, 50, 100, 0, 25 %
+local function click(x, y) mouse(x, y, true) step(1) mouse(x, y, false) step(1) end
+assert(math.abs(get('app', 'dscale') - 0.25) < 1e-9, 'start friction')
+click(560, 50)
+assert(math.abs(get('app', 'dscale') - 0.5) < 1e-9, 'friction step: ' .. get('app', 'dscale'))
+press('d') step(1)
+assert(math.abs(get('app', 'dscale') - 1) < 1e-9, 'friction key: ' .. get('app', 'dscale'))
+press('d') step(1)
+assert(get('app', 'dscale') == 0, 'friction zero')
 draw()
