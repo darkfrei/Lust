@@ -13,7 +13,9 @@ a time. The hard decisions are made there: follow them. If one does not fit, sto
 - `src/ecs.rs`, `src/host.rs`: the core (world, sandbox). Change only for the core itself.
 - `src/project.rs`: a folder as a program, hot sync, history. `src/dev.rs`: the MCP tools and
   the guide text the model reads. `src/driver.rs`: the test driver (lust_try, test/*.lua).
-- `src/screen.rs`: frame as text, input. `src/web.rs`: the browser display. `src/saves.rs`,
+- `src/screen.rs`: frame as text, input. `src/web.rs`: the browser display. `src/native`: the
+  window (winit + pixels; draw.rs paints the frame, font.bin from tools/font.py; mic.rs:
+  cpal, the loudness of the microphone). `src/saves.rs`,
   `src/pack.rs`, `src/launcher.rs`, `src/bin/lust.rs` (the program lust).
 - `src/lua/ui.lua`: the built-in UI library. `examples/pong`, `examples/menu`: sample projects.
 
@@ -28,6 +30,8 @@ target/release/lust test examples/menu
 
 When you touch ecs.rs, host.rs, journal.rs, store.rs or mcp.rs, also run the tests of Radost.
 What a person sees (the page) you check in a browser, or you say plainly that it is not checked.
+The window you check under Xvfb (software Vulkan, lavapipe) with a screenshot; Windows itself
+only N can check.
 
 ## Rules that must hold (docs/roadmap.ru.md, section 3)
 

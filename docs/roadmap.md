@@ -32,7 +32,7 @@ access for a program.
 | 4 | Errors that teach (a code, the place, one line of advice) | M | simple model |
 | 5 | Sample tasks with hidden acceptance tests, lust eval | M | simple model |
 | 6 | An event channel from the world to the display (exactly once): done | M | strong model |
-| 7 | A window of its own (browser app mode); ecs.quit() is done | S | simple, checked by N |
+| 7 | A window of its own: **done** without a browser (src/native: winit + pixels); not checked on Windows yet | S | checked by N |
 | 8 | Images as text: art/<n>.txt, gfx.sprite | M | simple model |
 | 9 | Sound as text: sfx/<n>.txt, sfx.play | M | simple model |
 | 10 | Text input and widgets for applications | L | simple model, in parts |

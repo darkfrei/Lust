@@ -10,3 +10,6 @@ Third-party parts that come with it:
   (MIT license).
 - The Rust crates listed in Cargo.lock, each under its own license (MIT or
   Apache-2.0 for nearly all, all permissive at the time of writing).
+- DejaVu Sans Mono (Bitstream Vera license; DejaVu changes are in the public domain):
+  its glyphs, as a bitmap, are the text of the window (src/native/font.bin). The license
+  is in src/native/FONT-LICENSE.txt.

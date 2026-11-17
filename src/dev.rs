@@ -60,7 +60,7 @@ ecs.call(entity, arg) -> what that entity's function returns
 input.down(key)  input.pressed(key) (went down this tick)  input.mouse() -> x, y, down
   keys: up down left right space enter escape shift ctrl alt tab backspace a-z 0-9 mouse
 SAVES: ecs.save(slot) and ecs.load(slot) (after this tick; load gives false when there is no such slot), ecs.slots() -> names, ecs.erase(slot). slot: 1..32 of a-z 0-9 _ -, at most 20. Only data is saved, not code; a load is refused when a type is gone or has another kind (said on the status line). In tests and lust_try the saves are in memory; the live game keeps them in the user's data folder, so they stay between starts.
-input.mic() -> how loud the microphone hears, 0 to 1. Call gfx.mic(true) in a draw file to ask for it: the browser asks the person and shows 'microphone on'; only the loudness reaches the world, never the sound. Driver: mic(level).
+input.mic() -> how loud the microphone hears, 0 to 1. Call gfx.mic(true) in a draw file to ask for it: the window (or the browser) shows 'microphone on'; only the loudness reaches the world, never the sound. Driver: mic(level).
 gfx, only in draw files: gfx.size(w, h) (the screen in your units, default 800 600; y grows down)
   gfx.clear(color)  gfx.rect(x, y, w, h, color)  gfx.circle(x, y, r, color)
   gfx.line(x1, y1, x2, y2, width, color)  gfx.text(x, y, size, color, text)

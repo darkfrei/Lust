@@ -4,20 +4,20 @@ English | [Русский](dev.ru.md)
 
 Lust is the core. A program built on it is **a folder of Lua files**: a game, a tool, an
 ERP module. Nobody, neither a person nor an AI, has to change the Rust code to make one.
-An AI builds the program through MCP, and the person watches it run in the browser while
-it grows.
+An AI builds the program through MCP, and the person watches it run in a window of its own
+while it grows (or in the browser, with `--web`).
 
 ```
 cargo build --release                      # makes target/release/lust (lust.exe on Windows)
-lust dev  <folder> [--port 8730] [--fps 60] [--no-web]   # an MCP server for an AI, and the live world
-lust run  <folder> [--port 8730] [--fps 60]              # the world in the browser
+lust dev  <folder> [--web] [--port 8730] [--fps 60] [--no-web] # an MCP server for an AI, and the live world in a window
+lust run  <folder> [--web] [--port 8730] [--fps 60]      # the world in a window (--web: in the browser)
 lust test <folder>                                       # the tests of the folder
 ```
 
 Try it with the Pong that an AI built through MCP alone (below):
 
 ```
-lust run examples/pong          # then open http://127.0.0.1:8730, keys W/S or up/down
+lust run examples/pong          # a window opens, keys W/S or up/down
 lust test examples/pong
 ```
 
@@ -119,7 +119,7 @@ cannot see: it holds keys, steps, reads the values and the frame.
 **History** (`.lust/history` in the folder): every change keeps what was there before, the
 last 500. `lust_undo` takes them back.
 
-## The screen is a module (`src/screen.rs`, `src/web.rs`)
+## The screen is a module (`src/screen.rs`, `src/web.rs`, `src/native`)
 
 The core knows only a **frame as text** and the **input**:
 
@@ -132,12 +132,12 @@ text 330 20 40 #fff 3
 ```
 
 Lua draws with `gfx.size/clear/rect/circle/line/text` (only in `draw/` files) and reads
-`input.down(key)`, `input.pressed(key)`, `input.mouse()`, `input.mic()` (the loudness of the microphone, 0 to 1; a draw file asks for it with `gfx.mic(true)`; the browser asks the person and shows that it is on; only the number reaches the world). A display shows the frame and
+`input.down(key)`, `input.pressed(key)`, `input.mouse()`, `input.mic()` (the loudness of the microphone, 0 to 1; a draw file asks for it with `gfx.mic(true)`; the window or the browser shows that it is on; only the number reaches the world). A display shows the frame and
 gives back the input through an `Exchange` (a mutex, no Lua in it).
 
 `gfx.measure(text, size)` gives the width and height of a text, anywhere (also in `sys/`).
-The browser reports the width of its monospace letters (`cw=`), so the answer is what you
-see. Every project also has `lib.ui` built in (`local ui = ecs.call('lib.ui')`): buttons
+The browser (and the window) reports the width of its monospace letters (`cw=`), so the
+answer is what you see. Every project also has `lib.ui` built in (`local ui = ecs.call('lib.ui')`): buttons
 that know their `w` and `h`, labels, panels, `stack`/`row` placing, `menu`, `update_menu`
 (keys, mouse, enter), `paragraph` (wraps text to a width). `examples/menu` is a template for
 a game with a menu, play, options and about screens.
@@ -165,9 +165,9 @@ numbers them and keeps the last 64 for 5 s. The page sends the number of the las
 the game has ended. In `lust dev` the world only pauses, so the AI can go on. In a test,
 `events()` gives what the world told the display since the last call.
 
-## When the page is closed
+## When the page or the window is closed
 
-`lust run` and a double click pause the game while no page shows it (a hidden tab, or before
+A closed window ends the program at once. With the page, `lust run --web` and a double click pause the game while no page shows it (a hidden tab, or before
 the browser opened) and end when the page is closed (3 s later, so a reload is not an end)
 or when no page was heard of for 3 minutes. `lust dev` keeps running: its AI client ends it.
 A game that draws nothing shows what to do instead of a black page.
@@ -179,21 +179,54 @@ When the game is ready, the AI calls `lust_pack` (or you run `lust pack <folder>
 the folder glued to its end. A double click on that file opens the game on its own menu:
 no command line, no list of games, no second file. At the start the file unpacks its lua
 files into the temp directory and runs them; the console window of the double click closes.
-The size is about 3 MB plus the files. It is the same lust, so a game needs no Rust.
+The size is about 14 MB plus the files (with the window; 3 MB without the feature `native`). It is the same lust, so a game needs no Rust.
 
 ## Starting without a command line
 
 Double click `lust`: it shows the games next to it (folders with a `world.lua`, in the
-folder `games` beside `lust`) as buttons in the browser. A click starts one, F1 comes back
+folder `games` beside `lust`) as buttons in a window. A click starts one, F1 comes back
 to the list. Drop a game folder onto `lust.exe` to run just that game. With a `world.lua`
 beside `lust`, it runs that folder.
 
 `web.rs` is one such display: a page on `127.0.0.1` with a canvas. It has no dependencies
 (std only), answers only requests whose `Host` is `127.0.0.1` or `localhost` (so a web page
 elsewhere cannot reach the world through the browser), and takes at most 4 KB of input a
-request. To show the world another way (a window, a terminal), write a module that reads
+request. To show the world another way (a terminal, say), write a module that reads
 `Exchange::frame` and calls `Exchange::put_input`; the rest does not change. Without the
-feature `web` it is not built.
+feature `web` it is not built. The window below is the second such module.
+
+## The window (`src/native`)
+
+`lust run`, `lust dev` and a double click open the game in a **window of its own**, without a
+browser (the feature `native`, on by default). `--web` shows it in the browser instead, and so
+does a computer where no window opens (no video card): lust then says so and opens the page.
+In `lust dev` the AI works over MCP as before, the window only shows; `--no-web` shows nothing
+(the AI alone).
+
+- winit makes the window and reads the keys and the mouse; pixels puts the picture into it
+  through the video card (DirectX 12 or Vulkan on Windows). That is what the overlay of Steam
+  needs: it does not show over a picture drawn without the video card.
+- The picture itself is drawn by the processor (`src/native/draw.rs`): rect, circle, line
+  with soft edges, text from a bitmap of DejaVu Sans Mono (Latin, German, Cyrillic, about
+  300 letters; another letter is `?`). A 1920 x 1080 frame of Pong takes about 4 ms.
+- The window speaks to the world exactly as the page does (the same input text, the same
+  events with `ack`), so a game cannot tell them apart. The frame keeps its shape in the
+  middle of the window; the window takes the size of the first frame once.
+- It draws when the world made a new frame (60 a second by default), at least 10 times a
+  second, never more: it costs nothing when the video card does not wait for the screen.
+- Closing the window ends the program at once, also `lust dev`; `ecs.quit()` ends `lust run`
+  as with the page and pauses `lust dev`. A minimized window pauses `lust run`.
+- **The microphone** (`src/native/mic.rs`, the crate cpal: WASAPI on Windows, ALSA on Linux)
+  is on only while the frames ask for it (`gfx.mic(true)`) and goes off 1.5 s after the last
+  ask, as on the page. The window shows a red dot, "microphone on" and how loud it hears; only
+  the loudness (0..1) reaches the world, the sound is never kept. No microphone, or one the
+  system blocks (Windows: Settings, Privacy, Microphone), is written in the corner instead,
+  and `input.mic()` stays 0.
+- Each window has its own `Exchange`, so a second window is a second `Exchange` (not built
+  yet: nothing in Lua asks for one).
+- It adds about 180 crates to the build and about 11 MB to the program (Linux, measured;
+  Windows not measured). Linux needs `libasound2-dev` to build it. Without the feature
+  `native` none of it is built.
 
 ## Safety
 

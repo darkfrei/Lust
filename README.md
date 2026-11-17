@@ -19,7 +19,7 @@ Lust gives a program five things at once, already working together:
 - **A program as a folder of Lua files** (`lust dev <folder>`): an AI builds a game or a
   tool through MCP, writing Lua files only, never Rust. Every change is hot (the world keeps
   its values, the new code runs from the next tick), and the person watches it in the
-  browser. See [docs/dev.md](docs/dev.md); every Lua function: [lua-api.lust.md](lua-api.lust.md), and where it lives in Rust: [lua-api.rust.md](lua-api.rust.md).
+  browser. See [docs/dev.md](docs/dev.md); every Lua function: [lua-api.lust.md](lua-api.lust.md). Where each is in Rust: marked `// lua api:` in the source.
 
 On top of that, a program adds **its own Lua API**. A game engine in the spirit of LÖVE
 adds its drawing and input, an ERP its documents and pages, a simulation its clock. The
@@ -45,8 +45,8 @@ cargo build --example stdio   # an MCP server for a real AI client over stdio (s
 cargo test
 
 cargo build --release                           # the program lust
-target/release/lust                             # a double click: the games next to it as buttons in the browser
-target/release/lust run examples/pong           # Pong, built by an AI through MCP: http://127.0.0.1:8730
+target/release/lust                             # a double click: the games next to it as buttons in a window
+target/release/lust run examples/pong           # Pong, built by an AI through MCP, in a window (--web: in the browser)
 target/release/lust dev <folder>                # an MCP server: an AI builds in that folder
 ```
 
@@ -253,8 +253,9 @@ types and entities), `sys/*.lua` (systems), `draw/*.lua` (drawing), `op/*.lua`
 MCP server over stdio: an AI reads one guide, writes and edits the files, tries code on a
 fresh world, runs the tests, and takes changes back. A change is hot: code that does not
 compile is refused, code that does replaces the old from the next tick, the values stay.
-The person sees the live world in the browser (`src/web.rs`, a module: another display can
-take its place). Pong built this way from an empty folder took 11 MCP messages and about
+The person sees the live world in a window of its own (`src/native`, feature `native`:
+winit and pixels, the picture through the video card, as the overlay of Steam needs; cpal for
+the loudness of the microphone), or in the browser with `--web` (`src/web.rs`). Pong built this way from an empty folder took 11 MCP messages and about
 3 000 tokens of content. All of it: [docs/dev.md](docs/dev.md).
 
 ## The door for an AI (`src/mcp.rs`)
@@ -293,10 +294,10 @@ client is at the top of the example.
 
 ## What Lust is not
 
-Lust has no window and no network beyond `127.0.0.1`. Its screen is a simple 2D frame
-(rectangles, circles, lines, text) shown by a page in the browser; a program that needs
-more (images, sound, a window, pages of an ERP) adds it through its own API or its own
-display module. It has no prompt format for an AI either.
+Lust has no network beyond `127.0.0.1`. Its screen is a simple 2D frame (rectangles,
+circles, lines, text) shown in a window or by a page in the browser; a program that needs
+more (images, sound, pages of an ERP) adds it through its own API or its own display
+module. It has no prompt format for an AI either.
 
 ## Built on Lust
 

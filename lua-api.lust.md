@@ -6,8 +6,8 @@ an example **with the result it really gave**. The examples were run on Lust its
 guide was written; a result such as `=> 50.0` is what the run printed.
 
 Other documents: the short form the AI reads is `lust_guide` (the constant `GUIDE` in
-`src/dev.rs`); where each function lives in Rust is in `lua-api.rust.md`; the mathematics of the
-solver is in `SOLVER-SPEC.ru.md`.
+`src/dev.rs`); where each function lives in Rust is marked `// lua api:` above it in the source;
+the mathematics of the solver is in `SOLVER-SPEC.ru.md`.
 
 Contents: 1 The idea and a first program · 2 Where code lives · 3 `world.lua` · 4 The Lua that is
 there · 5 `ecs`: the world · 6 `input` · 7 `gfx` · 8 `lib.ui` · 9 Saves · 10 Worlds with rights
@@ -575,10 +575,13 @@ is; the origin is the top left corner and **y grows downward**.
 | `gfx.line(x1, y1, x2, y2, width, color)` | a line |
 | `gfx.text(x, y, size, color, text)` | one line of text; `y` is its **top**; the text may be text, number or boolean |
 | `gfx.measure(text, size)` → `w, h` | the box of a text; works everywhere, also in `sys/` |
-| `gfx.mic(true)` | asks the browser for the microphone (the person must agree); only the loudness reaches the world: `input.mic()` |
+| `gfx.mic(true)` | asks for the microphone: the window turns it on and shows "microphone on", the browser asks the person first; only the loudness reaches the world: `input.mic()`. It goes off 1.5 s after the last ask |
 
-Colors are `'#rgb'`, `'#rrggbb'` or a CSS name (`'white'`, `'yellow'`). Text is measured at the
-width of one character that the browser reports (in a test the width is 0.6 of the size).
+Colors are `'#rgb'`, `'#rrggbb'` or a CSS name (`'white'`, `'yellow'`); `'#rgba'` and
+`'#rrggbbaa'` are see-through. Text is measured at the width of one character that the browser
+or the window reports (in a test the width is 0.6 of the size; the window says 0.602). The
+window knows Latin, German and Cyrillic letters and a few signs (`«» — … №`); any other
+letter shows as `?` there, while the browser shows it.
 
 ```lua
 return function()
@@ -1390,7 +1393,7 @@ error: test/a.lua:3: show
 You can change code in a test to try it out: `set('sys.move', 'src', 'return function(dt) ecs.quit() end')`
 followed by `step()` and `events()` (→ `{'quit'}`).
 
-Rust code that tests a program without a driver uses the same calls: see `lua-api.rust.md`.
+Rust code that tests a program without a driver uses the same calls (`src/driver.rs`).
 
 ---
 

@@ -2,13 +2,16 @@
 // the lua in that folder; this file never changes for it.
 //   lust                     a double click: the games next to lust (the folders with a
 //                            world.lua, in the folder games or beside lust) as a list of
-//                            buttons in the browser; with a world.lua beside lust it runs
+//                            buttons in a window; with a world.lua beside lust it runs
 //                            that folder. F1 in a game comes back to the list
 //   lust <folder>            runs that folder (drop a folder on lust.exe)
-//   lust run <folder> [--port 8730] [--fps 60] [--no-open]
-//   lust dev <folder> [--port 8730] [--fps 60] [--open] [--no-web]
+//   lust run <folder> [--web] [--port 8730] [--fps 60] [--no-open]
+//       a window of its own (feature native); --web, or a computer where no window opens,
+//       shows the game in the browser instead
+//   lust dev <folder> [--web] [--port 8730] [--fps 60] [--open] [--no-web]
 //       an MCP server over stdio for an AI that builds in that folder (lust::dev), and the
-//       live world in the browser at http://127.0.0.1:<port>
+//       live world in a window (--web: in the browser at http://127.0.0.1:<port>; --no-web:
+//       nowhere, the AI alone)
 //   lust pack <folder>       the game of the folder as ONE file (folder/dist/<name>): a double
 //                            click on it opens that game on its own menu (an AI does it with lust_pack)
 //   lust test <folder>       the tests of the folder (test/*.lua); exit code 1 if one fails
@@ -32,7 +35,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const USAGE: &str = "usage: lust                      (the games next to lust, or the folder with a world.lua beside it)\n       lust <folder>             (run that folder)\n       lust run  <folder> [--port 8730] [--fps 60] [--no-open]\n       lust dev  <folder> [--port 8730] [--fps 60] [--open] [--no-web]\n       lust pack <folder>        (the game as one file to double click)\n       lust test <folder>";
+const USAGE: &str = "usage: lust                      (the games next to lust, or the folder with a world.lua beside it)\n       lust <folder>             (run that folder)\n       lust run  <folder> [--web] [--port 8730] [--fps 60] [--no-open]\n       lust dev  <folder> [--web] [--port 8730] [--fps 60] [--open] [--no-web]\n       lust pack <folder>        (the game as one file to double click)\n       lust test <folder>";
 // how often the files on disk are compared with the live world
 const SYNC_EVERY: Duration = Duration::from_millis(500);
 // the world pauses when no page asked for a frame this long (the tab is hidden or closed)
@@ -46,6 +49,7 @@ const QUIT_GRACE: Duration = Duration::from_secs(1);
 // how many ports after the asked one are tried when it is taken
 const PORTS_TRIED: u16 = 20;
 
+#[derive(Clone)]
 struct Args {
     cmd: String,
     folder: Option<PathBuf>,
@@ -53,6 +57,8 @@ struct Args {
     fps: f64,
     web: bool,
     open: bool,
+    // a window of its own instead of the page (run, dev and a double click; --web: the page)
+    window: bool,
 }
 
 fn args() -> Result<Args, String> {
@@ -68,7 +74,7 @@ fn args() -> Result<Args, String> {
     if cmd != "start" && folder.is_none() {
         return Err(USAGE.to_string());
     }
-    let mut a = Args { cmd: cmd.clone(), folder, port: 8730, fps: 60.0, web: true, open: cmd != "dev" };
+    let mut a = Args { cmd: cmd.clone(), folder, port: 8730, fps: 60.0, web: true, open: cmd != "dev", window: cfg!(feature = "native") };
     let mut i = if a.folder.is_some() { rest + 1 } else { rest };
     while i < list.len() {
         let next = list.get(i + 1);
@@ -81,12 +87,20 @@ fn args() -> Result<Args, String> {
                 a.fps = next.and_then(|x| x.parse::<f64>().ok()).filter(|f| *f >= 1.0 && *f <= 1000.0).ok_or("--fps needs 1..1000")?;
                 i += 1;
             }
-            "--no-web" => a.web = false,
+            "--no-web" => {
+                a.web = false;
+                a.window = false;
+            }
+            "--web" => a.window = false,
             "--open" => a.open = true,
             "--no-open" => a.open = false,
             other => return Err(format!("unknown option {}\n{}", other, USAGE)),
         }
         i += 1;
+    }
+    // the window shows the game, the page is not needed (--no-web: neither of them)
+    if a.window {
+        a.web = false;
     }
     Ok(a)
 }
@@ -217,8 +231,10 @@ enum Show {
 
 // the loop: messages of the AI between the frames, a frame every 1/fps s, the files on disk
 // every SYNC_EVERY. dev ends when stdin closes (the client went away)
-fn live(a: &Args) -> Result<(), String> {
+fn live(a: &Args, ex: Arc<Mutex<Exchange>>) -> Result<(), String> {
     let dev = a.cmd == "dev";
+    // something shows the game: the page or the window
+    let shown = a.web || a.window;
     let dirs = menu_dirs();
     // a folder with a world.lua beside lust is the game; else the list of games
     // a game glued to this very file (lust::pack) wins: a double click opens that game
@@ -234,7 +250,9 @@ fn live(a: &Args) -> Result<(), String> {
             eprintln!("lust: {}", p);
         }
     }
-    let ex = Arc::new(Mutex::new(Exchange::default()));
+    if a.window && packed.is_some() && !dev {
+        hide_console();
+    }
     if a.web {
         let addr = serve_near(a.port, &ex)?;
         let url = format!("http://{}", addr);
@@ -284,14 +302,20 @@ fn live(a: &Args) -> Result<(), String> {
         // the game asked to end: when the page has heard it, or a little later anyway
         if let Some((n, at)) = quit {
             let acked = ex.lock().unwrap_or_else(|p| p.into_inner()).acked;
-            if !a.web || acked >= n || now.duration_since(at) > QUIT_GRACE {
+            if !shown || acked >= n || now.duration_since(at) > QUIT_GRACE {
                 eprintln!("lust: the game ended");
                 return Ok(());
             }
         }
-        // run and a double click end with the page; dev ends with its AI client
+        // a closed window ends lust at once, also dev (the person closed it). a closed page ends
+        // run and a double click a little later (a reload comes back); dev with the page ends
+        // with its AI client only
+        if a.window && bye.is_some() {
+            eprintln!("lust: the window was closed");
+            return Ok(());
+        }
         if a.web && !dev {
-            if bye.is_some_and(|b| now.duration_since(b) > BYE_GRACE) {
+            if bye.is_some_and(|b| now.duration_since(b) >= BYE_GRACE) {
                 eprintln!("lust: the page was closed");
                 return Ok(());
             }
@@ -301,7 +325,7 @@ fn live(a: &Args) -> Result<(), String> {
             }
         }
         // nobody looks: the game waits (in dev the AI may look through its tools)
-        let watched = !a.web || dev || seen.is_some_and(|t| now.duration_since(t) < WATCH);
+        let watched = !shown || dev || seen.is_some_and(|t| now.duration_since(t) < WATCH);
         if n > 0 && watched {
             let input = ex.lock().unwrap_or_else(|p| p.into_inner()).take_input();
             // F1 in a game that was started from the list: back to the list
@@ -366,6 +390,27 @@ fn live(a: &Args) -> Result<(), String> {
     }
 }
 
+// the live program: in a window of its own when it can, else with the page
+fn start(a: Args) -> Result<(), String> {
+    #[cfg(feature = "native")]
+    if a.window {
+        let ex = Arc::new(Mutex::new(Exchange::default()));
+        let (b, e) = (a.clone(), Arc::clone(&ex));
+        let title = a.folder.as_ref().and_then(|f| f.file_name()).map(|n| format!("lust: {}", n.to_string_lossy())).unwrap_or_else(|| String::from("lust"));
+        match lust::native::run(&title, ex, Box::new(move || live(&b, e))) {
+            Ok(r) => return r,
+            Err(why) => {
+                eprintln!("lust: no window here ({}); the game opens in the browser", why);
+                let mut b = a;
+                b.window = false;
+                b.web = true;
+                return live(&b, Arc::new(Mutex::new(Exchange::default())));
+            }
+        }
+    }
+    live(&a, Arc::new(Mutex::new(Exchange::default())))
+}
+
 // lust pack <folder>: the game of the folder as one file
 fn pack(a: &Args) -> Result<(), String> {
     let folder = a.folder.clone().ok_or(USAGE)?;
@@ -399,7 +444,7 @@ fn test(a: &Args) -> Result<bool, String> {
 
 fn main() {
     let r = args().and_then(|a| match a.cmd.as_str() {
-        "dev" | "run" | "start" => live(&a).map(|_| true),
+        "dev" | "run" | "start" => start(a).map(|_| true),
         "test" => test(&a),
         "pack" => pack(&a).map(|_| true),
         _ => Err(String::from(USAGE)),

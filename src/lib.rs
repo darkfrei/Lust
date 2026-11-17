@@ -25,6 +25,7 @@
 //   dev      (optional, with mcp) the door of a developer: an AI builds a program in one
 //            project folder, as lua files only
 //   web      (optional) a display in the browser on 127.0.0.1
+//   native   (optional) a display in a window of its own, without a browser
 // the program lust (src/bin/lust.rs) runs a project folder: lust dev | run | test
 // a program adds its own lua api (Host::add_global, Host::add_to_ecs) and keeps its own
 // data in the lua state (mlua app data)
@@ -54,3 +55,5 @@ pub mod mcp;
 pub mod dev;
 #[cfg(feature = "web")]
 pub mod web;
+#[cfg(feature = "native")]
+pub mod native;
