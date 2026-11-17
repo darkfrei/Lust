@@ -370,8 +370,7 @@ fn point_arg(w: &World, s: &Scratch, args: Args, i: usize, name: &str) -> mlua::
     Ok(w.index_of(v as i64).and_then(|e| access::slot(s, e)))
 }
 
-// lua api: ecs.path(from, to [, cost]) -> ids, cost or nil
-// ecs.path(from, to [, cost]) -> ids of the points on the cheapest way (both ends included)
+// lua api: ecs.path(from, to [, cost]) -> ids of the points on the cheapest way (both ends included)
 // and its cost, or nil. A* with a straight-line guide when the cost is the length
 fn path(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Option<Vec<i64>>, Option<f64>)> {
     let cost = cost_arg(args, 2)?;
@@ -391,8 +390,7 @@ fn path(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Option<Vec<
     })
 }
 
-// lua api: ecs.distances(from [, cost]) -> ids, costs
-// ecs.distances(from [, cost]) -> ids, distances: every point that can be reached, with its cost
+// lua api: ecs.distances(from [, cost]) -> ids, distances: every point that can be reached, with its cost
 fn distances(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Vec<i64>, Vec<f64>)> {
     let cost = cost_arg(args, 1)?;
     released(s, |s| {

@@ -148,6 +148,7 @@ A loop of 1000 entities through `query`, Lua and `write` takes under 1 ms.
 | `ecs.history(e, n)` | `{{seq, role, op, comp, value}}` | last `n` (≤ 50) changes of one entity, newest first; empty without a journal |
 | `ecs.journal(n)` | `{{role, op, entity, comp, value}}` | last `n` (≤ 50) entries of the journal |
 | `ecs.quit()` | | ends the game once the page has heard it (in `lust dev` it only pauses). Not from `draw/` |
+| `ecs.launch(name)` | | only in the world of the launcher (the game list): picks the game `'game.NNN'` to start |
 
 ### Saves
 
@@ -278,8 +279,8 @@ contact is at most `friction` times the push that keeps the point out.
 | `ecs.sample_catenary(id, t)` | `x, y` | a point on the curve of a cable, t = 0..1 |
 | `ecs.query_point(x, y, max_dist [, mask])` | `id, dist` or nil | the nearest point |
 | `ecs.raycast_segments(x, y, dx, dy, max_dist [, mask])` | `id, hx, hy, nx, ny, t` or nil | the first segment on a ray |
-| `ecs.path(from, to [, cost])` | `ids, cost` or nil | the cheapest way over links (A* / Dijkstra) |
-| `ecs.distances(from [, cost])` | `ids, costs` | the cost to every reachable point |
+| `ecs.path(from, to [, cost])` | `ids, cost` or nil | the cheapest way over links, both ends in `ids`; **A\*** with a straight-line guide for `cost` 0 (length), Dijkstra for 1 and 2. nil when there is no way or an end is not a point |
+| `ecs.distances(from [, cost])` | `ids, costs` | the cost to every point that can be reached (Dijkstra), `costs[i]` for `ids[i]` |
 
 `cost`: 0 the length now (default), 1 the rest length, 2 one per link. `iterations`: 1..64.
 `substeps`: 1..256. A bad argument raises `bad_arg: <name>`; a `draw/` file cannot call the
