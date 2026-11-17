@@ -23,7 +23,7 @@ use std::rc::Rc;
 
 use crate::ecs::World;
 use crate::host::Host;
-use access::{Scratch, CONTACT, OLD, POS};
+use access::{Scratch, CONTACT, OLD, POS, SPIN};
 use data::NONE;
 use mlua::{IntoLuaMulti, MultiValue, Value};
 
@@ -261,7 +261,10 @@ fn solve_tick(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
                 contact::project_segments(&mut s.pts, &s.segs, 1);
             }
         }
-        access::scatter_points(w, s, &pc, POS | OLD | CONTACT)?;
+        for r in s.pts.roll.iter_mut() {
+            *r /= h;
+        }
+        access::scatter_points(w, s, &pc, POS | OLD | CONTACT | SPIN)?;
         if let (true, Some(lc)) = (has_links, lc) {
             access::scatter_links(w, s, &lc)?;
         }
@@ -287,7 +290,11 @@ fn project_segments(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<
             return Ok(0);
         }
         let n = contact::project_segments(&mut s.pts, &s.segs, iterations);
-        access::scatter_points(w, s, &pc, POS | OLD | CONTACT)?;
+        let back = if step > 0.0 { SPIN } else { 0 };
+        for r in s.pts.roll.iter_mut() {
+            *r = if step > 0.0 { *r / step } else { f64::NAN };
+        }
+        access::scatter_points(w, s, &pc, POS | OLD | CONTACT | back)?;
         Ok(n as i64)
     })
 }
@@ -310,7 +317,11 @@ fn project_edges(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64
             return Ok(0);
         }
         let n = contact::project_edges(&mut s.pts, &s.edges, iterations);
-        access::scatter_points(w, s, &pc, POS | OLD | CONTACT)?;
+        let back = if step > 0.0 { SPIN } else { 0 };
+        for r in s.pts.roll.iter_mut() {
+            *r = if step > 0.0 { *r / step } else { f64::NAN };
+        }
+        access::scatter_points(w, s, &pc, POS | OLD | CONTACT | back)?;
         Ok(n as i64)
     })
 }

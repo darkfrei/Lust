@@ -1,5 +1,5 @@
 -- the bridge holds, the one hanger carries load, the fixings stay, the wheel follows the mouse
-mouse(200, 250, false)
+mouse(200, 250, true)
 step(120)
 -- fixed points did not move
 assert(get('road_l', 'x') == 100 and get('road_l', 'y') == 300, 'a fixing moved')
@@ -10,18 +10,18 @@ assert(get('hang', 'y') < get('joint_5', 'y') - 50, 'the cable joint fell onto t
 -- the cable curves
 assert(get('cable_a', 'catenary_a') ~= 0 and get('cable_a', 'sag') > 0, 'no catenary')
 -- the wheel follows the mouse along the road
-mouse(420, 250, false)
+mouse(420, 250, true)
 step(240)
 local wx, wy = get('wheel', 'x'), get('wheel', 'y')
 assert(math.abs(wx - 420) < 15, 'the wheel did not follow the mouse: x ' .. wx)
 assert(wy < get('joint_5', 'y') and wy > 200, 'the wheel is not on the road: y ' .. wy)
-mouse(150, 250, false)
+mouse(150, 250, true)
 step(240)
 assert(math.abs(get('wheel', 'x') - 150) < 15, 'the wheel did not come back: x ' .. get('wheel', 'x'))
 -- the hanger is a rope with a catenary of its own (it sags when slack, it never pushes)
 assert(get('hanger', 'sag') ~= nil, 'the hanger is not a cable')
 -- joints and the wheel lose speed faster than the call's default (own damping columns)
-assert(get('joint_3', 'damping') == 0.996 and get('wheel', 'damping') == 0.96, 'damping columns')
+assert(get('joint_3', 'damping') == 0.996 and get('wheel', 'damping') == 0.996, 'damping columns')
 -- the road is a chain of beams of fixed length (mode 0), it hangs in a sag between the fixings
 assert(get('beam_1', 'mode') == 0, 'a road link is not a beam of fixed length')
 assert(get('joint_2', 'y') > 305, 'the road does not sag: ' .. get('joint_2', 'y'))
@@ -33,7 +33,7 @@ assert(get('cable_a', 'tension') > 0 and get('hanger', 'strength') > 0, 'no tens
 assert(math.abs(1 / get('joint_3', 'inv_mass') - 41.5) < 1e-6, 'joint mass: ' .. 1 / get('joint_3', 'inv_mass'))
 -- a weak beam is judged in one tick and breaks in the next: two half beams and two new joints
 -- replace it, the mass moves (a quarter of the beam to each new joint), the halves do not break
-mouse(150, 250, false)
+mouse(150, 250, true)
 set('beam_5', 'strength', '1')
 step(1)
 assert(get('beam_5', 'doomed') == 1, 'the weak beam was not judged')

@@ -41,7 +41,6 @@ fn old(p: &Points, i: usize) -> V2 {
     (p.ox[i], p.oy[i])
 }
 
-// new old position after a push: friction only on an inward hit (vn < 0), else speed is kept
 // the speed of the rim of a turning circle where it touches along normal n (the rim point is
 // at -n * r from the centre): roll * r * (n.y, -n.x)
 fn rim(roll: f64, r: f64, n: V2) -> V2 {
@@ -51,16 +50,44 @@ fn rim(roll: f64, r: f64, n: V2) -> V2 {
     (roll * r * n.1, -roll * r * n.0)
 }
 
-// friction takes a share mu of the sliding: the speed along the surface of the rim against it
-fn new_old(v: V2, n: V2, mu: f64, new_pos: V2, rim_v: V2) -> V2 {
-    let vn = dot(v, n);
-    if vn < 0.0 {
-        let vt = (v.0 - vn * n.0, v.1 - vn * n.1);
-        let slip = (vt.0 + rim_v.0, vt.1 + rim_v.1);
-        let nv = (vt.0 - mu * slip.0, vt.1 - mu * slip.1);
-        (new_pos.0 - nv.0, new_pos.1 - nv.1)
+// 1 / moment of inertia of a turning point, 0 when its turning is not changed by friction
+fn inv_inertia(p: &Points, i: usize) -> f64 {
+    let k = p.inertia[i];
+    if k.is_finite() && k > 0.0 {
+        1.0 / k
     } else {
-        (new_pos.0 - v.0, new_pos.1 - v.1)
+        0.0
+    }
+}
+
+// friction by coulomb: the impulse along the surface that stops the sliding, but never more than
+// mu times the impulse along the normal (jn). w_t is the inverse mass along the surface (with
+// the turning of the rim when the point has an inertia). gives the impulse (mass * speed)
+fn friction(slip: V2, jn: f64, w_t: f64, mu: f64) -> V2 {
+    if w_t.is_nan() || w_t <= 0.0 || jn.is_nan() || jn <= 0.0 || mu <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let full = (-slip.0 / w_t, -slip.1 / w_t);
+    let len = (full.0 * full.0 + full.1 * full.1).sqrt();
+    let max = mu * jn;
+    if len <= max || len == 0.0 {
+        full
+    } else {
+        (full.0 * max / len, full.1 * max / len)
+    }
+}
+
+// a friction impulse jt at the rim (at -n * r from the centre) turns a point with an inertia
+fn turn_by(p: &mut Points, i: usize, n: V2, jt: V2) {
+    let ii = inv_inertia(p, i);
+    if ii == 0.0 {
+        return;
+    }
+    let r = p.r[i];
+    let d = (-n.0 * r, -n.1 * r);
+    let dr = (d.0 * jt.1 - d.1 * jt.0) * ii;
+    if dr.is_finite() {
+        p.roll[i] += dr;
     }
 }
 
@@ -164,13 +191,27 @@ fn seg_push(g: &Seg, pn: V2, po: V2, r: f64) -> Option<(V2, V2)> {
     seg_crossing(g, pn, po, r, so, sp).or_else(|| seg_overlap(g, pn, r, so, sp))
 }
 
-// writes the result of a push of point i; false (and nothing written) when not finite
+// writes the result of a push of point i; false (and nothing written) when not finite. on an
+// inward hit (vn < 0) the speed of approach is taken away and friction (coulomb, mu) acts on the
+// sliding of the rim; else the speed is kept
 fn apply_point_push(p: &mut Points, i: usize, np: V2, n: V2, mu: f64) -> bool {
     if !finite2(np) || !finite2(n) {
         return false;
     }
     let v = sub(pos(p, i), old(p, i));
-    let no = new_old(v, n, mu, np, rim(p.roll[i], p.r[i], n));
+    let vn = dot(v, n);
+    let wp = p.w[i];
+    let mut nv = v;
+    let mut jt = (0.0, 0.0);
+    if vn < 0.0 && wp > 0.0 {
+        let vt = (v.0 - vn * n.0, v.1 - vn * n.1);
+        let rv = rim(p.roll[i], p.r[i], n);
+        let slip = (vt.0 + rv.0, vt.1 + rv.1);
+        let w_t = wp + p.r[i] * p.r[i] * inv_inertia(p, i);
+        jt = friction(slip, -vn / wp, w_t, mu);
+        nv = (vt.0 + wp * jt.0, vt.1 + wp * jt.1);
+    }
+    let no = (np.0 - nv.0, np.1 - nv.1);
     if !finite2(no) {
         return false;
     }
@@ -178,6 +219,7 @@ fn apply_point_push(p: &mut Points, i: usize, np: V2, n: V2, mu: f64) -> bool {
     p.y[i] = np.1;
     p.ox[i] = no.0;
     p.oy[i] = no.1;
+    turn_by(p, i, n, jt);
     p.contact[i] = 1.0;
     p.cnx[i] = n.0;
     p.cny[i] = n.1;
@@ -372,19 +414,22 @@ fn edge_push(p: &mut Points, i: usize, h: &EdgeHit, mu: f64) -> bool {
     let na = (p.x[h.a] - ka * s * h.n.0, p.y[h.a] - ka * s * h.n.1);
     let nb = (p.x[h.b] - kb * s * h.n.0, p.y[h.b] - kb * s * h.n.1);
     // 2. the speed: when the point and the edge come closer, one impulse (the same effective mass
-    //    w_sum) takes the speed of approach away from both, and friction (mu) a share of the speed
-    //    along the edge. the momentum is kept; a fixed edge (wa = wb = 0) gives the old rule: the
-    //    point moves along with the edge, less friction
+    //    w_sum) takes the speed of approach away from both, and friction (coulomb, mu) acts on the
+    //    sliding. the momentum is kept; a point with an inertia also turns by the friction
     let rel = sub(vp, vq);
     let rel_n = dot(rel, h.n);
     let (mut nvp, mut nva, mut nvb) = (vp, va, vb);
+    let mut jt = (0.0, 0.0);
     if rel_n < 0.0 {
         // the sliding: the speed along the edge plus the speed of the rim of a turning point
         let rv = rim(p.roll[i], p.r[i], h.n);
         let rt = (rel.0 - rel_n * h.n.0 + rv.0, rel.1 - rel_n * h.n.1 + rv.1);
-        // the impulse (per unit of w): along the normal, and against the sliding
-        let j = (-rel_n * h.n.0 - mu * rt.0, -rel_n * h.n.1 - mu * rt.1);
-        let j = (j.0 / w_sum, j.1 / w_sum);
+        // the impulse (mass * speed): along the normal it stops the approach, along the edge
+        // friction by coulomb (at most mu times the normal impulse)
+        let jn = -rel_n / w_sum;
+        let w_t = w_sum + p.r[i] * p.r[i] * inv_inertia(p, i);
+        jt = friction(rt, jn, w_t, mu);
+        let j = (jn * h.n.0 + jt.0, jn * h.n.1 + jt.1);
         nvp = (vp.0 + wp * j.0, vp.1 + wp * j.1);
         nva = (va.0 - ka * j.0, va.1 - ka * j.1);
         nvb = (vb.0 - kb * j.0, vb.1 - kb * j.1);
@@ -401,6 +446,7 @@ fn edge_push(p: &mut Points, i: usize, h: &EdgeHit, mu: f64) -> bool {
     (p.ox[i], p.oy[i]) = no;
     (p.ox[h.a], p.oy[h.a]) = noa;
     (p.ox[h.b], p.oy[h.b]) = nob;
+    turn_by(p, i, h.n, jt);
     p.contact[i] = 1.0;
     p.cnx[i] = h.n.0;
     p.cny[i] = h.n.1;
@@ -546,6 +592,70 @@ mod tests {
         assert!(mom(&p).abs() < 1e-9, "{}", mom(&p));
         let (vc, va) = (p.x[c] - p.ox[c], p.x[a] - p.ox[a]);
         assert!(vc * va < 0.0 && vc.abs() > 1e-6, "{} {}", vc, va);
+    }
+
+    fn ground(mu: f64) -> Segs {
+        let mut s = Segs::default();
+        s.add(-1000.0, 0.0, 1000.0, 0.0, mu, 1);
+        s
+    }
+
+    // coulomb: on ground the speed along it falls by at most mu * (the speed of approach) per
+    // step: speed 1, approach 0.05; ice (0.1) takes 0.005, rubber (1) takes 0.05
+    #[test]
+    fn friction_is_at_most_mu_times_the_push() {
+        for mu in [0.1, 1.0] {
+            let s = ground(mu);
+            let mut p = Points::default();
+            let i = p.add(0.0, 10.0, 1.0, 10.0);
+            p.ox[i] = -1.0;
+            verlet(&mut p, i, -0.05);
+            project_segments(&mut p, &s, 1);
+            let vx = p.x[i] - p.ox[i];
+            assert!((vx - (1.0 - mu * 0.05)).abs() < 1e-9, "mu {}: {}", mu, vx);
+        }
+    }
+
+    // a wheel with an inertia, turning on the spot: on ice it spins and hardly moves, on rubber
+    // the friction spins it down and drives it until it rolls (speed + rim speed = 0)
+    #[test]
+    fn a_wheel_with_inertia_spins_on_ice_and_rolls_on_rubber() {
+        let run = |mu: f64| {
+            let s = ground(mu);
+            let mut p = Points::default();
+            let i = p.add(0.0, 10.0, 1.0, 10.0);
+            p.roll[i] = 0.1;
+            // a ring: inertia = mass * r^2 = 100
+            p.inertia[i] = 100.0;
+            for _ in 0..400 {
+                verlet(&mut p, i, -0.05);
+                project_segments(&mut p, &s, 1);
+            }
+            (p.x[i] - p.ox[i], p.roll[i])
+        };
+        let (v_ice, roll_ice) = run(0.01);
+        let (v_rub, roll_rub) = run(1.0);
+        // rubber: rolling, and a ring keeps half of its turning (the rest went into the motion)
+        assert!((v_rub + roll_rub * 10.0).abs() < 1e-9, "not rolling: {} {}", v_rub, roll_rub);
+        assert!((roll_rub - 0.05).abs() < 1e-6, "{}", roll_rub);
+        // ice: still slipping after 400 steps, the wheel turns faster than it rolls
+        assert!(roll_ice > 0.08 && (v_ice + roll_ice * 10.0).abs() > 0.1, "{} {}", v_ice, roll_ice);
+    }
+
+    // friction turns a wheel with an inertia that slides: it starts to roll by itself
+    #[test]
+    fn a_sliding_wheel_with_inertia_starts_to_roll() {
+        let s = ground(1.0);
+        let mut p = Points::default();
+        let i = p.add(0.0, 10.0, 1.0, 10.0);
+        p.ox[i] = -1.0;
+        p.inertia[i] = 50.0;
+        for _ in 0..200 {
+            verlet(&mut p, i, -0.05);
+            project_segments(&mut p, &s, 1);
+        }
+        let v = p.x[i] - p.ox[i];
+        assert!((v + p.roll[i] * 10.0).abs() < 1e-9 && v > 0.5, "{} {}", v, p.roll[i]);
     }
 
     #[test]

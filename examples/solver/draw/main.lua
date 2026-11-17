@@ -95,6 +95,6 @@ return function()
     gfx.text(b[1] + 8, 14, 12, '#dde', b[3])
   end
   gfx.rect(480, 38, 188, 24, '#24385a')
-  gfx.text(20, 582, 12, '#aab', 'A / D: turn the wheel')
+  gfx.text(20, 582, 12, '#aab', 'hold the mouse button: drag the wheel, A / D: turn it')
   gfx.text(488, 44, 12, '#dde', string.format('Turn friction [F]: %d %%', math.floor((ecs.get('app', 'dscale') or 1) * 100 + 0.5)))
 end

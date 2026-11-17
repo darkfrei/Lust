@@ -11,12 +11,14 @@ assert(math.abs(get('b5', 'y') - 300) < 6, 'the truss sags: ' .. get('b5', 'y'))
 -- pulling the mouse 20 px or more under the road loads the middle members past their strength
 -- the mouse goes down slowly (1 px per tick, as a hand does): a jump of 40 px at once throws the
 -- wheel on the road with its whole momentum, and that hit breaks the truss (it should)
-for y = 250, 290 do mouse(300, y, false) step(1) end
+for y = 250, 290 do mouse(300, y, true) step(1) end
 step(200)
 assert(math.abs(get('wheel', 'x') - 300) < 15, 'the wheel did not follow: ' .. get('wheel', 'x'))
 assert(get('wheel', 'y') < 300 and get('wheel', 'y') > 270, 'the wheel is not on the road: ' .. get('wheel', 'y'))
 assert(get('road_4', 'rest_len') ~= nil and get('diag_4', 'rest_len') ~= nil and get('top_4', 'rest_len') ~= nil, 'a member broke under the wheel')
--- the buttons at the top right: a click on 'Bridge 1' goes back to the suspension bridge
+-- the buttons at the top right: a click on 'Bridge 1' goes back to the suspension bridge (the
+-- button is let go first: a click is the button going down)
+mouse(300, 290, false) step(1)
 mouse(520, 20, true)
 step(1)
 mouse(520, 20, false)
@@ -46,22 +48,22 @@ press('f') step(1)
 assert(math.abs(get('app', 'dscale') - 1) < 1e-9, 'friction key: ' .. get('app', 'dscale'))
 press('f') step(1)
 assert(get('app', 'dscale') == 0, 'friction zero')
--- D turns the wheel clockwise: on the road it pushes itself to the right against the mouse spring,
--- the phase turns, and the wheel rolls freely again after the key
+-- the wheel let go (mouse button up) falls onto the road; D drives it to the right rolling (the
+-- rim and the wheel move together: friction by coulomb with an inertia), without a key it rolls
+-- on and slows, A drives it back
 press('1') step(1)
-for y = 250, 315 do mouse(200, y, false) step(1) end
-step(60)
-assert(get('wheel', 'contact') == 1, 'the wheel is not on the road')
+mouse(200, 250, false)
+step(120)
+assert(get('wheel', 'contact') == 1, 'the free wheel is not on the road')
 local x0 = get('wheel', 'x')
 keys('d')
-step(30)
+step(60)
+local v = (get('wheel', 'x') - get('wheel', 'old_x')) * 960
 assert(get('wheel', 'spin') > 10, 'the wheel does not turn: ' .. get('wheel', 'spin'))
-assert(get('wheel', 'x') > x0 + 10, 'the turning wheel does not push itself right: ' .. get('wheel', 'x') - x0)
-keys()
-step(120)
-assert(math.abs(get('wheel', 'spin')) < 5, 'the free wheel keeps turning: ' .. get('wheel', 'spin'))
+assert(get('wheel', 'x') > x0 + 50, 'the wheel does not drive: ' .. get('wheel', 'x') - x0)
+assert(math.abs(v - get('wheel', 'spin') * 12) < 0.5 * v, 'the wheel slips too much: ' .. v .. ' ' .. get('wheel', 'spin'))
 keys('a')
-step(30)
-assert(get('wheel', 'spin') < 0, 'A does not turn it the other way')
+step(90)
+assert(get('wheel', 'spin') < 0 and get('wheel', 'old_x') > get('wheel', 'x'), 'A does not drive it back')
 keys()
 draw()

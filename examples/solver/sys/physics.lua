@@ -31,7 +31,8 @@ local WORLD = {x0 = -200, x1 = 1000, y1 = 900}
 
 -- a point: x y old_x old_y inv_mass radius layer mask (w = 0 is fixed: a rigid fixing).
 -- damping is the share of speed a point keeps per substep (nil: the call's 0.999). joints keep
--- 0.996 (4 times the loss of 0.999), the wheel 0.96 (40 times the loss of 0.999)
+-- 0.996 (4 times the loss of 0.999), the wheel too (0.96 was air thick as honey: a driven
+-- wheel spun on the spot)
 -- inv_mass is 1 / mass: a joint 0.1 is a mass of 10, the wheel 0.02 is a mass of 50
 -- layer is what the point is (8 a joint, 16 a wheel, 32 the mouse marker), mask is what it hits:
 -- 1 ground, 2 semi-solid, 4 road, 16 wheels. a joint hits only the ground
@@ -231,9 +232,11 @@ end
 -- the wheel and the mouse, the same in every level: a soft spring of length 0 pulls the wheel
 -- to the mouse
 local function build_wheel()
-  point('wheel', 200, 250, 0.02, 12, 16, 23, 0.96)
+  point('wheel', 200, 250, 0.02, 12, 16, 23, 0.996)
   ecs.set('wheel', 'spin', 0)
   ecs.set('wheel', 'phase', 0)
+  -- a disc: mass 50 (inv_mass 0.02), radius 12, inertia = 50 * 12^2 / 2
+  ecs.set('wheel', 'inertia', 3600)
   point('mouse', 200, 250, 0, 0, 32, 0)
   link('drag', 'mouse', 'wheel', 0, 0.00002, 0, nil)
 end
@@ -247,27 +250,24 @@ local function build()
 end
 
 -- the wheel turns: D clockwise (it drives to the right on a road below it), A the other way. the
--- turning speed is the column spin (radians per second), the solver lets the rim rub on roads and
--- the ground with it. without a key the wheel rolls freely: on a road its spin goes to the speed
--- of rolling (its speed along the road / radius). phase is the angle, only for the drawing
+-- turning speed is the column spin (radians per second). the wheel has a moment of inertia
+-- (a disc: mass * r^2 / 2), so the solver changes spin by the friction of the road and the ground
+-- (coulomb: at most friction * the push): it spins up a free wheel that slides, brakes a wheel
+-- that spins, and lets it slip when the motor is stronger than the grip. the motor here only adds
+-- its own turning: SPIN_ACC radians per second each second while a key is held, up to SPIN_MAX
 local SPIN_MAX = 20
-local SPIN_ACC = 40
+-- the softness of the spring to the mouse: held, and let go (so soft it pulls nothing)
+local DRAG_SOFT = 0.00002
+local DRAG_OFF = 1000000
+local SPIN_ACC = 200
 local function drive_wheel(dt)
   local w = ecs.get('wheel', 'spin')
   if not w then return end
   local key = (input.down('d') and 1 or 0) - (input.down('a') and 1 or 0)
-  if key ~= 0 then
-    w = math.max(-SPIN_MAX, math.min(SPIN_MAX, w + key * SPIN_ACC * dt))
-  elseif ecs.get('wheel', 'contact') == 1 then
-    local nx, ny = ecs.get('wheel', 'contact_nx'), ecs.get('wheel', 'contact_ny')
-    local h = dt / 16
-    local vx = (ecs.get('wheel', 'x') - ecs.get('wheel', 'old_x')) / h
-    local vy = (ecs.get('wheel', 'y') - ecs.get('wheel', 'old_y')) / h
-    w = (vx * -ny + vy * nx) / ecs.get('wheel', 'radius')
-  else
-    w = w * 0.99
+  if key ~= 0 and w * key < SPIN_MAX then
+    w = math.min(SPIN_MAX, math.max(-SPIN_MAX, w + key * SPIN_ACC * dt))
+    ecs.set('wheel', 'spin', w)
   end
-  ecs.set('wheel', 'spin', w)
   ecs.set('wheel', 'phase', (ecs.get('wheel', 'phase') + w * dt) % (2 * math.pi))
 end
 
@@ -297,7 +297,10 @@ return function(dt)
   if ecs.get('app', 'ready') ~= 1 then build() end
   -- the mouse marker sits where the pointer is (before the first move the pointer reads 0, 0:
   -- then the marker stays where it was)
-  local mx, my = input.mouse()
+  local mx, my, held = input.mouse()
+  -- the spring to the mouse pulls the wheel only while the button is held (not over the buttons
+  -- at the top): else it is soft as nothing and the wheel is free (it falls, rolls, drives on A/D)
+  ecs.set('drag', 'compliance', (held and my > 70) and DRAG_SOFT or DRAG_OFF)
   if mx ~= 0 or my ~= 0 then
     ecs.set('mouse', 'x', mx) ecs.set('mouse', 'y', my)
     ecs.set('mouse', 'old_x', mx) ecs.set('mouse', 'old_y', my)

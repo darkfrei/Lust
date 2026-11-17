@@ -34,6 +34,9 @@ pub struct Points {
     // down). friction with an edge or a segment works against the speed of its rim, so a turning
     // circle drives itself along (and the edge the other way). 0: no turning
     pub roll: Vec<f64>,
+    // the moment of inertia of a turning point; with it friction changes roll (spins it up, brakes
+    // it); 0 means the program alone sets the turning
+    pub inertia: Vec<f64>,
     pub contact: Vec<f64>,
     pub cnx: Vec<f64>,
     pub cny: Vec<f64>,
@@ -62,6 +65,7 @@ impl Points {
         self.damp.clear();
         self.bend.clear();
         self.roll.clear();
+        self.inertia.clear();
         self.contact.clear();
         self.cnx.clear();
         self.cny.clear();
@@ -84,6 +88,7 @@ impl Points {
         self.damp.push(f64::NAN);
         self.bend.push(f64::NAN);
         self.roll.push(0.0);
+        self.inertia.push(0.0);
         self.contact.push(0.0);
         self.cnx.push(0.0);
         self.cny.push(0.0);

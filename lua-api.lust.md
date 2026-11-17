@@ -235,6 +235,7 @@ Point (needs `x, y, old_x, old_y, inv_mass`):
 | `damping` | the call's | share of speed kept per substep (0..1) |
 | `bend_damping` | the call's | share of turning between its links taken per substep (`damp_angular`) |
 | `spin` | 0 | turning speed as a circle, rad/s, plus is clockwise on screen; friction drives with it |
+| `inertia` | 0 | moment of inertia; with it friction changes `spin` (spins up, brakes, slips) and the solver writes it back |
 | `contact`, `contact_nx`, `contact_ny` | written | 1 when pushed out this substep, and the normal |
 
 Link (needs `node_a, node_b, rest_len`; the ends are `ecs.id` numbers):
@@ -253,8 +254,11 @@ Link (needs `node_a, node_b, rest_len`; the ends are `ecs.id` numbers):
 | `min_slack` | 0.001 | a cable is never quite straight (share of the chord) |
 | `tension` | written | the pull of a cable (`update_catenary`) |
 
-Segment (a static barrier; needs `x1, y1, x2, y2`): `friction` (0, 0..1), `layer` (1),
+Segment (a static barrier; needs `x1, y1, x2, y2`): `friction` (0), `layer` (1),
 `radius` (0, a capsule).
+
+`friction` (of a segment or an edge) is the coefficient of Coulomb friction: the friction of a
+contact is at most `friction` times the push that keeps the point out.
 
 ### Functions
 

@@ -23,6 +23,8 @@ use crate::ecs::World;
 pub const POS: u8 = 1;
 pub const OLD: u8 = 2;
 pub const CONTACT: u8 = 4;
+// the turning (spin) of points with an inertia: the caller puts roll back into radians per second first
+pub const SPIN: u8 = 8;
 
 // cables: links that have catenary_a (and node_a, node_b, rest_len); needs the points
 // gathered first (a and b are positions in Scratch::pts)
@@ -66,6 +68,7 @@ pub struct PointCols {
     contact: Option<usize>,
     cnx: Option<usize>,
     cny: Option<usize>,
+    spin: Option<usize>,
 }
 pub struct LinkCols {
     lambda: Option<usize>,
@@ -179,7 +182,7 @@ fn clean_nonneg(v: f64) -> f64 {
 
 // ---------- points ----------
 
-fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64, damp: [f64; 3]) {
+fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64, damp: [f64; 4]) {
     let p = &mut s.pts;
     p.ent.push(e);
     p.x.push(v[0]);
@@ -196,6 +199,7 @@ fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64, 
     p.bend.push(if (0.0..=1.0).contains(&damp[1]) { damp[1] } else { f64::NAN });
     // spin is radians per second here; a call that knows its step turns it into radians per step
     p.roll.push(if damp[2].is_finite() { damp[2] } else { 0.0 });
+    p.inertia.push(if damp[3].is_finite() && damp[3] > 0.0 { damp[3] } else { 0.0 });
     p.contact.push(0.0);
     p.cnx.push(0.0);
     p.cny.push(0.0);
@@ -206,7 +210,7 @@ fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64, 
     s.slot_of[i] = (s.pts.ent.len() - 1) as u32;
 }
 
-// points: x, y, old_x, old_y, inv_mass required; radius (0), layer (1), mask (1), group (0), damping (the call's), bend_damping, spin (0, radians per second) optional.
+// points: x, y, old_x, old_y, inv_mass required; radius (0), layer (1), mask (1), group (0), damping (the call's), bend_damping, spin (0, radians per second), inertia (0) optional.
 // fills s.pts (w: negative or NaN becomes 0; contact, cnx, cny are the values in the world, 0 when missing) and s.slot_of.
 // None when a required column is missing
 pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
@@ -215,11 +219,11 @@ pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
     let req = need(world, ["x", "y", "old_x", "old_y", "inv_mass"])?;
     let (r, l, m) = (find(world, "radius"), find(world, "layer"), find(world, "mask"));
     let (grp, damp, bend) = (find(world, "group"), find(world, "damping"), find(world, "bend_damping"));
-    let spin = find(world, "spin");
+    let (spin, inertia) = (find(world, "spin"), find(world, "inertia"));
     let (cc, cx, cy) = (find(world, "contact"), find(world, "contact_nx"), find(world, "contact_ny"));
     for &e in shortest(world, &req) {
         if let Some(v) = read_all(world, &req, e) {
-            push_point(s, e, v, [opt(world, r, e, 0.0), opt(world, l, e, 1.0), opt(world, m, e, 1.0)], opt(world, grp, e, 0.0), [opt(world, damp, e, f64::NAN), opt(world, bend, e, f64::NAN), opt(world, spin, e, 0.0)]);
+            push_point(s, e, v, [opt(world, r, e, 0.0), opt(world, l, e, 1.0), opt(world, m, e, 1.0)], opt(world, grp, e, 0.0), [opt(world, damp, e, f64::NAN), opt(world, bend, e, f64::NAN), opt(world, spin, e, 0.0), opt(world, inertia, e, 0.0)]);
             // the contact of an earlier call stays (project_edges, then project_segments in
             // one substep must not wipe each other); only integrate_verlet clears it
             let k = s.pts.contact.len() - 1;
@@ -228,7 +232,7 @@ pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
             s.pts.cny[k] = opt(world, cy, e, 0.0);
         }
     }
-    Some(PointCols { x: req[0], y: req[1], ox: req[2], oy: req[3], contact: cc, cnx: cx, cny: cy })
+    Some(PointCols { x: req[0], y: req[1], ox: req[2], oy: req[3], contact: cc, cnx: cx, cny: cy, spin })
 }
 
 // the position of an entity index in the gathered points, if it is one
@@ -278,9 +282,11 @@ pub fn scatter_points(world: &mut World, s: &Scratch, c: &PointCols, what: u8) -
     let p = &s.pts;
     let (fx, fy, fox, foy) = (|i: usize| p.x[i], |i: usize| p.y[i], |i: usize| p.ox[i], |i: usize| p.oy[i]);
     let (fc, fnx, fny) = (|i: usize| p.contact[i], |i: usize| p.cnx[i], |i: usize| p.cny[i]);
+    // only points with an inertia have a turning the solver changed; NaN is not written
+    let fs = |i: usize| if p.inertia[i] > 0.0 { p.roll[i] } else { f64::NAN };
     let pick = |bit: u8, col: Option<usize>| if what & bit != 0 { col } else { None };
     let e = &p.ent[..];
-    let jobs: [Job; 7] = [
+    let jobs: [Job; 8] = [
         (pick(POS, Some(c.x)), e, &fx),
         (pick(POS, Some(c.y)), e, &fy),
         (pick(OLD, Some(c.ox)), e, &fox),
@@ -288,6 +294,7 @@ pub fn scatter_points(world: &mut World, s: &Scratch, c: &PointCols, what: u8) -
         (pick(CONTACT, c.contact), e, &fc),
         (pick(CONTACT, c.cnx), e, &fnx),
         (pick(CONTACT, c.cny), e, &fny),
+        (pick(SPIN, c.spin), e, &fs),
     ];
     scatter(world, &jobs)
 }
