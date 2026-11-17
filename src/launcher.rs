@@ -111,7 +111,10 @@ mod tests {
     use std::fs;
 
     fn games_dir() -> PathBuf {
-        let d = std::env::temp_dir().join(format!("lust-games-{}", std::process::id()));
+        // one folder per call: tests run in parallel in one process and must not delete each other's
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let k = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let d = std::env::temp_dir().join(format!("lust-games-{}-{}", std::process::id(), k));
         let _ = fs::remove_dir_all(&d);
         for n in ["snake", "Pong", "empty", "tetris_2"] {
             fs::create_dir_all(d.join(n)).unwrap();
