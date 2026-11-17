@@ -34,6 +34,8 @@ pub struct Cables {
     pub len: Vec<f64>,
     // linear_density, 0 when the column is missing
     pub rho: Vec<f64>,
+    // the least slack as a share of the chord (column min_slack, 0.001 when missing)
+    pub slack: Vec<f64>,
     // out: to be filled by the caller, written by scatter_cables. gather fills it with
     // Shape::straight()
     pub shape: Vec<Shape>,
@@ -362,7 +364,7 @@ pub fn gather_segs(world: &World, s: &mut Scratch) -> Option<SegCols> {
 
 // ---------- cables ----------
 
-// cables: node_a, node_b, rest_len, catenary_a required; linear_density (0) optional. needs
+// cables: node_a, node_b, rest_len, catenary_a required; linear_density (0), min_slack (0.001) optional. needs
 // gather_points first
 pub fn gather_cables(world: &World, s: &mut Scratch) -> Option<CableCols> {
     s.cables.ent.clear();
@@ -370,9 +372,11 @@ pub fn gather_cables(world: &World, s: &mut Scratch) -> Option<CableCols> {
     s.cables.b.clear();
     s.cables.len.clear();
     s.cables.rho.clear();
+    s.cables.slack.clear();
     s.cables.shape.clear();
     let req = need(world, ["node_a", "node_b", "rest_len", "catenary_a"])?;
     let rho = find(world, "linear_density");
+    let min_slack = find(world, "min_slack");
     for &e in shortest(world, &req) {
         let Some([va, vb, len, _]) = read_all(world, &req, e) else { continue };
         let Some((a, b)) = ends(world, &s.slot_of, va, vb) else { continue };
@@ -385,6 +389,7 @@ pub fn gather_cables(world: &World, s: &mut Scratch) -> Option<CableCols> {
         cb.b.push(b);
         cb.len.push(len);
         cb.rho.push(clean_nonneg(opt(world, rho, e, 0.0)));
+        cb.slack.push(opt(world, min_slack, e, 0.001));
         cb.shape.push(Shape::straight());
     }
     Some(CableCols { a: Some(req[3]), x0: find(world, "catenary_x0"), y0: find(world, "catenary_y0"), sag: find(world, "sag") })

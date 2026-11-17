@@ -34,6 +34,9 @@ local function cable(name, a, b, rest)
   ecs.set(name, 'catenary_y0', 0)
   ecs.set(name, 'sag', 0)
   ecs.set(name, 'linear_density', 0.5)
+  -- a loaded cable is never exactly taut: at least 0.1 % of the chord is slack (its tension
+  -- stays finite and keeps pulling the ends into balance)
+  ecs.set(name, 'min_slack', 0.001)
 end
 
 local function build()

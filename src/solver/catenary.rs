@@ -71,6 +71,18 @@ pub fn shape(ends: [f64; 4], len: f64, gy: f64) -> Shape {
     }
 }
 
+// like shape, but a cable is never taken as taut: its length is raised to at least
+// chord / (1 - min_slack). a heavy cable cannot be straight, its tension would have to be
+// infinite; with this floor the force on its ends stays finite and goes on pulling the ends
+// into the real balance instead of switching to a constant when the chord reaches the length.
+// min_slack 0 is plain shape (a taut cable is Straight)
+pub fn shape_loaded(ends: [f64; 4], len: f64, gy: f64, min_slack: f64) -> Shape {
+    let m = if min_slack.is_finite() { min_slack.clamp(0.0, 0.5) } else { 0.0 };
+    let d = (ends[2] - ends[0]).hypot(ends[3] - ends[1]);
+    let floor = if d.is_finite() { d / (1.0 - m) } else { len };
+    shape(ends, if len.is_finite() { len.max(floor) } else { len }, gy)
+}
+
 // sinh(u)/u - 1, with a series for small u
 fn sinhm1(u: f64) -> f64 {
     if u < 0.1 {
@@ -409,4 +421,22 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn a_taut_cable_with_a_floor_still_pulls_up_and_inward_without_a_jump() {
+        // slack 1e-3 of the chord at least: at and past the full length the shape is the same Curve
+        let ends = [100.0, 100.0, 300.0, 190.0];
+        let d = (200.0f64 * 200.0 + 90.0 * 90.0).sqrt();
+        let a = shape_loaded(ends, d, 980.0, 1e-3);
+        let b = shape_loaded(ends, d * 1.0005, 980.0, 1e-3);
+        let c = shape_loaded(ends, d * 0.9, 980.0, 1e-3);
+        assert_eq!(a.kind, Kind::Curve);
+        assert_eq!(a.a, b.a);
+        assert_eq!(a.a, c.a);
+        let (_, fh) = end_forces(&a, ends, d, 0.5, 980.0);
+        assert!(fh.0 < 0.0 && fh.1 < 0.0, "the lower end is pulled inward and up: {:?}", fh);
+        // no floor: the old behaviour, a taut cable is straight
+        assert_eq!(shape_loaded(ends, d, 980.0, 0.0).kind, Kind::Straight);
+    }
 }
+
