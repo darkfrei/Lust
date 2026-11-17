@@ -83,5 +83,10 @@ return function()
     gfx.rect(20 + i * 14, 566, 14, 10, string.format('#%02x%02x%02x', math.floor(red * 255), math.floor(green * 255), math.floor(blue * 255)))
   end
   gfx.text(20, 552, 12, '#aab', 'load / strength: 0 ... 100 %')
-  gfx.text(520, 582, 12, '#aab', '1 / 2: bridge, R: restart')
+  -- the buttons (a click inside is handled in sys/physics.lua at the same places); keys 1, 2, R do the same
+  local level = ecs.get('app', 'level') or 1
+  for i, b in ipairs({{480, 90, 'Bridge 1 [1]', level == 1}, {578, 90, 'Bridge 2 [2]', level == 2}, {676, 84, 'Restart [R]', false}}) do
+    gfx.rect(b[1], 8, b[2], 24, b[4] and '#3a5a8a' or '#24385a')
+    gfx.text(b[1] + 8, 14, 12, '#dde', b[3])
+  end
 end

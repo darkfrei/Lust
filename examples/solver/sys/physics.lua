@@ -254,6 +254,15 @@ return function(dt)
   local level = ecs.get('app', 'level') or 1
   if input.pressed('1') then restart(1) elseif input.pressed('2') then restart(2)
   elseif input.pressed('r') then restart(level) end
+  -- the same by mouse: three buttons at the top right (draw/main.lua draws them at the same place)
+  if input.pressed('mouse') then
+    local cx, cy = input.mouse()
+    if cy >= 8 and cy <= 32 then
+      if cx >= 480 and cx < 570 then restart(1)
+      elseif cx >= 578 and cx < 668 then restart(2)
+      elseif cx >= 676 and cx < 760 then restart(level) end
+    end
+  end
   if ecs.get('app', 'ready') ~= 1 then build() end
   -- the mouse marker sits where the pointer is (before the first move the pointer reads 0, 0:
   -- then the marker stays where it was)

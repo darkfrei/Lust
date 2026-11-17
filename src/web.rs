@@ -65,7 +65,15 @@ function mRead() {
   var bar = document.getElementById('ml'); if (bar) bar.style.width = Math.round(mLevel * 60) + 'px';
   return mLevel;
 }
-function key(e) { return names[e.key] || e.key.toLowerCase(); }
+// a letter or a digit is named by the key itself (KeyR is r, Digit1 is 1), whatever the layout
+// of the keyboard says (a Russian layout gives a different letter for the key of r)
+function key(e) {
+  if (names[e.key]) return names[e.key];
+  var c = e.code || '';
+  if (/^Key[A-Z]$/.test(c)) return c.charAt(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(c)) return c.charAt(5);
+  return e.key.toLowerCase();
+}
 function keyDown(e) { var n = key(e); if (!down.has(n)) hits.add(n); down.add(n); if (names[e.key]) e.preventDefault(); }
 function keyUp(e) { down.delete(key(e)); }
 function pos(e) { var r = c.getBoundingClientRect(); mx = (e.clientX - r.left) / k; my = (e.clientY - r.top) / k; }
