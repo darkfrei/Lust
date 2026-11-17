@@ -284,6 +284,35 @@ contact is at most `friction` times the push that keeps the point out.
 `substeps`: 1..256. A bad argument raises `bad_arg: <name>`; a `draw/` file cannot call the
 writing ones (`readonly`).
 
+### Wheels, friction and dampers
+
+- **A turning circle.** A point with `radius > 0` and a `spin` rolls on what it touches: the rim
+  moves at `spin * radius` along the surface, and friction drives the body with it. `spin` is in
+  rad/s, plus is clockwise on screen (y points down). `solve_tick` knows the step length; for
+  `project_edges` / `project_segments` called on their own pass `dt`, otherwise `spin` has no
+  effect there.
+- **Friction is Coulomb's.** What a contact can do along the surface is at most `friction` times
+  what it does across it. So a wheel on ice (`friction` 0) does not drive, on rubber (1) it
+  grips, and nothing is ever infinite. Edges and segments carry the coefficient; a contact
+  uses the one of the barrier.
+- **`inertia` 0 or not.** With `inertia = 0` the program owns `spin`: it sets it (a motor with
+  no limit) and the solver only reads it. With `inertia > 0` the solver changes `spin` itself:
+  friction spins the wheel up when the road moves, brakes it, lets it slip, and the new value is
+  written back. A motor is then a torque you add to `spin` yourself each tick, for example
+  `spin = spin + torque / inertia * dt`; the solver then limits what reaches the road by friction. (The example adds a fixed turning per second up to a cap instead.)
+- **`spring_damping`.** A damper for a soft link (`compliance > 0`; a rigid link ignores it). It
+  takes the speed of the two ends along the link, implicitly, at every substep, so it holds for
+  any stiffness. Pick `beta = 2 * sqrt(m * compliance)` for no swing past (`m` the mass pulled),
+  less to let it swing a little. A spring without it swings for a long time, which is what a
+  mouse spring on a heavy wheel did.
+- **Moves become speed.** The solver is Verlet: speed is `x - old_x`. A jump of a position (a
+  teleport, a new `rest_len` far from the old, two far points joined) is a speed one substep
+  later. To move a point without a shot, move `old_x`, `old_y` by the same amount; change a
+  `rest_len` a little each tick, not at once.
+- **Adding and removing.** Links and points can be created and removed between ticks; the next
+  call sees them. A link with two equal ends or with `rest_len` 0 at a coincident pair is
+  skipped (no direction). The program keeps ids and masses (`inv_mass`) in step by itself.
+
 ### A tick, as the example does it
 
 ```lua
