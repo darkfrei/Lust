@@ -9,6 +9,8 @@ pub mod contact;
 pub mod data;
 pub mod distance;
 pub mod integrate;
+pub mod path;
+pub mod points;
 pub mod query;
 #[cfg(test)]
 mod scene_tests;
@@ -109,7 +111,7 @@ fn reg<R: IntoLuaMulti + 'static>(host: &Host, scratch: &Rc<RefCell<Scratch>>, n
 }
 
 // gives the world of a host the functions ecs.integrate_verlet, ecs.solve_distance,
-// ecs.project_segments, ecs.project_edges, ecs.query_point, ecs.raycast_segments,
+// ecs.project_segments, ecs.project_edges, ecs.project_points, ecs.path, ecs.distances, ecs.query_point, ecs.raycast_segments,
 // ecs.update_catenary, ecs.apply_catenary_load and ecs.sample_catenary
 pub fn attach(host: &Host) -> Result<(), String> {
     let sc = Rc::new(RefCell::new(Scratch::default()));
@@ -117,6 +119,9 @@ pub fn attach(host: &Host) -> Result<(), String> {
     reg(host, &sc, "solve_distance", solve_distance)?;
     reg(host, &sc, "project_segments", project_segments)?;
     reg(host, &sc, "project_edges", project_edges)?;
+    reg(host, &sc, "project_points", project_points)?;
+    reg(host, &sc, "path", path)?;
+    reg(host, &sc, "distances", distances)?;
     reg(host, &sc, "query_point", query_point)?;
     reg(host, &sc, "raycast_segments", raycast_segments)?;
     reg(host, &sc, "update_catenary", update_catenary)?;
@@ -193,6 +198,86 @@ fn project_edges(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64
         let n = contact::project_edges(&mut s.pts, &s.edges, iterations);
         access::scatter_points(w, s, &pc, POS | OLD | CONTACT)?;
         Ok(n as i64)
+    })
+}
+
+// every pair of round points that overlap is pushed apart (see points.rs)
+fn project_points(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i64> {
+    let iterations = iterations_arg(args, 0)?;
+    writable(w)?;
+    released(s, |s| {
+        let Some(pc) = access::gather_points(w, s) else { return Ok(0) };
+        if s.pts.len() < 2 {
+            return Ok(0);
+        }
+        // links only tell which pairs are joined: no links is fine
+        let _ = access::gather_links(w, s);
+        let n = points::project_points(&mut s.pts, &s.links, iterations);
+        access::scatter_points(w, s, &pc, POS | OLD | CONTACT)?;
+        Ok(n as i64)
+    })
+}
+
+// the cost of a link: 0 its length now (default), 1 its rest length, 2 one per link
+fn cost_arg(args: Args, i: usize) -> mlua::Result<path::Cost> {
+    Ok(match opt_num_arg(args, i, "cost")? {
+        None | Some(0.0) => path::Cost::Length,
+        Some(1.0) => path::Cost::Rest,
+        Some(2.0) => path::Cost::Hops,
+        Some(_) => return Err(bad_arg("cost")),
+    })
+}
+
+// a point given by its id (the number of ecs.id); None when it is not a point
+fn point_arg(w: &World, s: &Scratch, args: Args, i: usize, name: &str) -> mlua::Result<Option<usize>> {
+    let v = num_arg(args, i, name)?;
+    if v.fract() != 0.0 {
+        return Err(bad_arg(name));
+    }
+    Ok(w.index_of(v as i64).and_then(|e| access::slot(s, e)))
+}
+
+// ecs.path(from, to [, cost]) -> ids of the points on the cheapest way (both ends included)
+// and its cost, or nil. A* with a straight-line guide when the cost is the length
+fn path(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Option<Vec<i64>>, Option<f64>)> {
+    let cost = cost_arg(args, 2)?;
+    released(s, |s| {
+        if access::gather_points(w, s).is_none() {
+            return Ok((None, None));
+        }
+        let (Some(a), Some(b)) = (point_arg(w, s, args, 0, "from").map_err(|e| e.to_string())?, point_arg(w, s, args, 1, "to").map_err(|e| e.to_string())?) else {
+            return Ok((None, None));
+        };
+        let _ = access::gather_links(w, s);
+        let g = path::Graph::build(&s.pts, &s.links, cost);
+        Ok(match path::path(&g, &s.pts, a, b, cost == path::Cost::Length) {
+            Some((way, c)) => (Some(way.iter().map(|&k| w.id_at(s.pts.ent[k as usize])).collect()), Some(c)),
+            None => (None, None),
+        })
+    })
+}
+
+// ecs.distances(from [, cost]) -> ids, distances: every point that can be reached, with its cost
+fn distances(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<(Vec<i64>, Vec<f64>)> {
+    let cost = cost_arg(args, 1)?;
+    released(s, |s| {
+        if access::gather_points(w, s).is_none() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        let Some(a) = point_arg(w, s, args, 0, "from").map_err(|e| e.to_string())? else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let _ = access::gather_links(w, s);
+        let g = path::Graph::build(&s.pts, &s.links, cost);
+        let d = path::distances(&g, a);
+        let (mut ids, mut ds) = (Vec::new(), Vec::new());
+        for (k, &v) in d.iter().enumerate() {
+            if v.is_finite() {
+                ids.push(w.id_at(s.pts.ent[k]));
+                ds.push(v);
+            }
+        }
+        Ok((ids, ds))
     })
 }
 
@@ -335,11 +420,14 @@ mod tests {
         h
     }
 
-    const NAMES: [&str; 9] = [
+    const NAMES: [&str; 12] = [
         "integrate_verlet",
         "solve_distance",
         "project_segments",
         "project_edges",
+        "project_points",
+        "path",
+        "distances",
         "query_point",
         "raycast_segments",
         "update_catenary",
@@ -348,7 +436,7 @@ mod tests {
     ];
 
     #[test]
-    fn registers_all_nine() {
+    fn registers_all_twelve() {
         let h = host();
         for n in NAMES {
             assert_eq!(h.probe(&format!("return type(ecs.{})", n)).unwrap(), "function", "{}", n);

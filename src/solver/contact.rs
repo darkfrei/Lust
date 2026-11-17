@@ -173,7 +173,6 @@ fn apply_point_push(p: &mut Points, i: usize, np: V2, n: V2, mu: f64) -> bool {
 }
 
 fn segments_for_point(p: &mut Points, s: &Segs, i: usize) -> usize {
-    let r = p.r[i];
     let mut pushes = 0;
     for j in 0..s.len() {
         if p.mask[i] & s.layer[j] == 0 {
@@ -183,6 +182,8 @@ fn segments_for_point(p: &mut Points, s: &Segs, i: usize) -> usize {
         if !finite2(pn) || !finite2(po) {
             return pushes;
         }
+        // a capsule: the point keeps its own radius plus the thickness of the segment away
+        let r = p.r[i] + s.rad[j];
         let Some(g) = seg_at(s, j) else { continue };
         if g.layer == 0 || seg_box_miss(&g, pn, po, r) {
             continue;
@@ -216,6 +217,8 @@ pub fn project_segments(p: &mut Points, s: &Segs, iterations: usize) -> usize {
 struct EdgeHit {
     a: usize,
     b: usize,
+    // the distance to keep: radius of the point plus the thickness of the edge
+    r: f64,
     t: f64,
     n: V2,
     d: f64,
@@ -287,17 +290,16 @@ fn edge_geom(p: &Points, i: usize, a: usize, b: usize) -> Option<EdgeGeom> {
 }
 
 // the point crossed the current line from its own side, inside the edge: foot point push
-fn edge_crossed(g: &EdgeGeom, a: usize, b: usize) -> Option<EdgeHit> {
+fn edge_crossed(g: &EdgeGeom, a: usize, b: usize, r: f64) -> Option<EdgeHit> {
     if g.sp * g.sgn >= 0.0 || !(0.0..=1.0).contains(&g.tu) {
         return None;
     }
     let n = (g.perp.0 * g.sgn, g.perp.1 * g.sgn);
-    Some(EdgeHit { a, b, t: g.tu, n, d: g.sp * g.sgn })
+    Some(EdgeHit { a, b, r, t: g.tu, n, d: g.sp * g.sgn })
 }
 
 // closer than r to the edge: normal is the own-side normal inside the edge, delta/d at ends
-fn edge_touch(p: &Points, i: usize, g: &EdgeGeom, a: usize, b: usize) -> Option<EdgeHit> {
-    let r = p.r[i];
+fn edge_touch(p: &Points, i: usize, g: &EdgeGeom, a: usize, b: usize, r: f64) -> Option<EdgeHit> {
     let pn = pos(p, i);
     let pb = (g.pa.0 + g.ab.0, g.pa.1 + g.ab.1);
     if edge_box_miss(pn, g.pa, pb, r) {
@@ -313,16 +315,17 @@ fn edge_touch(p: &Points, i: usize, g: &EdgeGeom, a: usize, b: usize) -> Option<
     let side = (g.perp.0 * g.sgn, g.perp.1 * g.sgn);
     let d = d2.sqrt();
     if g.tu > 0.0 && g.tu < 1.0 {
-        return Some(EdgeHit { a, b, t, n: side, d: g.sp * g.sgn });
+        return Some(EdgeHit { a, b, r, t, n: side, d: g.sp * g.sgn });
     }
     let n = if d >= EPS_DIST { (delta.0 / d, delta.1 / d) } else { side };
-    Some(EdgeHit { a, b, t, n, d })
+    Some(EdgeHit { a, b, r, t, n, d })
 }
 
 // the push of point i by the edge a-b, if any
-fn edge_overlap(p: &Points, i: usize, a: usize, b: usize) -> Option<EdgeHit> {
+fn edge_overlap(p: &Points, i: usize, a: usize, b: usize, rad: f64) -> Option<EdgeHit> {
     let g = edge_geom(p, i, a, b)?;
-    edge_crossed(&g, a, b).or_else(|| edge_touch(p, i, &g, a, b))
+    let r = p.r[i] + rad;
+    edge_crossed(&g, a, b, r).or_else(|| edge_touch(p, i, &g, a, b, r))
 }
 
 // relative velocity of the point against the edge point q, before the push
@@ -343,7 +346,7 @@ fn edge_push(p: &mut Points, i: usize, h: &EdgeHit, mu: f64) -> bool {
     if !w_sum.is_finite() || w_sum <= 0.0 {
         return false;
     }
-    let s = (p.r[i] - h.d) / w_sum;
+    let s = (h.r - h.d) / w_sum;
     let (vp, vq) = edge_rel_velocity(p, i, h);
     let rel = sub(vp, vq);
     let rel_n = dot(rel, h.n);
@@ -386,7 +389,11 @@ fn edges_for_point(p: &mut Points, e: &Edges, i: usize) -> usize {
         if a == i || b == i {
             continue;
         }
-        let Some(h) = edge_overlap(p, i, a, b) else { continue };
+        // the vertices and the sides of one shape (the same non-zero group) pass each other
+        if p.grp[i] != 0 && p.grp[i] == e.grp[j] {
+            continue;
+        }
+        let Some(h) = edge_overlap(p, i, a, b, e.rad[j]) else { continue };
         if edge_push(p, i, &h, clamp_mu(e.fric[j])) {
             pushes += 1;
         }
@@ -680,5 +687,63 @@ mod tests {
             project_edges(&mut p, &e, 1);
             assert!(p.y[c] >= 10.0 - 1e-9);
         }
+    }
+
+    #[test]
+    fn a_capsule_segment_keeps_the_point_one_thickness_further() {
+        let (mut s, mut p) = (floor(), Points::default());
+        s.rad[0] = 5.0;
+        let i = p.add(0.0, 100.0, 1.0, 10.0);
+        for _ in 0..200 {
+            p.y[i] -= 2.0;
+            project_segments(&mut p, &s, 1);
+            p.oy[i] = p.y[i];
+        }
+        assert!((p.y[i] - 15.0).abs() < 1e-6, "rests at r + thickness from the line: {}", p.y[i]);
+    }
+
+    #[test]
+    fn a_capsule_segment_stops_a_point_that_has_no_radius_of_its_own_only_if_it_has_one() {
+        // a point with r = 0 never collides (the old rule), thickness does not change that
+        let (mut s, mut p) = (floor(), Points::default());
+        s.rad[0] = 5.0;
+        let i = p.add(0.0, 2.0, 1.0, 0.0);
+        assert_eq!(project_segments(&mut p, &s, 1), 0);
+        assert_eq!(p.y[i], 2.0);
+    }
+
+    #[test]
+    fn a_capsule_edge_keeps_the_point_one_thickness_away() {
+        let mut p = Points::default();
+        let a = p.add(-100.0, 0.0, 0.0, 0.0);
+        let b = p.add(100.0, 0.0, 0.0, 0.0);
+        let i = p.add(0.0, -12.0, 1.0, 10.0);
+        let mut e = Edges::default();
+        e.add(a, b, 1, 0.0);
+        e.rad[0] = 5.0;
+        for _ in 0..50 {
+            p.y[i] += 1.0;
+            project_edges(&mut p, &e, 1);
+            p.oy[i] = p.y[i];
+        }
+        assert!((p.y[i] - (-15.0)).abs() < 1e-6, "{}", p.y[i]);
+    }
+
+    #[test]
+    fn a_shape_does_not_push_itself() {
+        // a triangle of three points and three edges, all in group 4: nothing moves
+        let mut p = Points::default();
+        let ids = [p.add(0.0, 0.0, 1.0, 6.0), p.add(10.0, 0.0, 1.0, 6.0), p.add(5.0, 8.0, 1.0, 6.0)];
+        let mut e = Edges::default();
+        for (u, v) in [(0, 1), (1, 2), (2, 0)] {
+            let k = e.add(ids[u], ids[v], 1, 0.0);
+            e.grp[k] = 4;
+        }
+        let before = p.x.clone();
+        for &i in &ids {
+            p.grp[i] = 4;
+        }
+        assert_eq!(project_edges(&mut p, &e, 3), 0);
+        assert_eq!(p.x, before);
     }
 }

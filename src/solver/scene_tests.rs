@@ -4,10 +4,10 @@ use super::attach;
 use crate::ecs::{Spec, World};
 use crate::host::Host;
 
-const COLS: [&str; 27] = [
+const COLS: [&str; 28] = [
     "x", "y", "old_x", "old_y", "inv_mass", "radius", "layer", "mask", "contact", "contact_nx", "contact_ny", "node_a", "node_b",
     "rest_len", "compliance", "mode", "lambda", "force_max", "x1", "y1", "x2", "y2", "friction", "catenary_a", "catenary_x0",
-    "catenary_y0", "sag",
+    "catenary_y0", "sag", "group",
 ];
 
 fn host() -> Host {
@@ -141,4 +141,75 @@ fn a_killed_point_makes_its_links_vanish_without_a_panic() {
     // two links end at p4
     assert_eq!(h.probe("ecs.kill('p4') return ecs.solve_distance(1/960, 1)").unwrap(), "8");
     run(&h, 20);
+}
+
+// a square body: four points, six rigid links (sides and diagonals), four edges, all in group 1.
+// a ball falls on it. closed shapes, circles and the ground together
+const SQUARE: &str = r#"
+local function point(n, x, y, w, r, layer, mask, g)
+  ecs.spawn(n, {x = x, y = y, old_x = x, old_y = y, inv_mass = w, radius = r, layer = layer, mask = mask, group = g,
+    contact = 0, contact_nx = 0, contact_ny = 0})
+end
+ecs.spawn('ground', {x1 = 0, y1 = 500, x2 = 800, y2 = 500, friction = 0.5, layer = 1})
+local c = {{300, 400}, {340, 400}, {340, 440}, {300, 440}}
+for i = 1, 4 do point('s' .. i, c[i][1], c[i][2], 1, 3, 1, 7, 1) end
+local function link(n, a, b, rest, edge)
+  local t = {node_a = ecs.id(a), node_b = ecs.id(b), rest_len = rest, compliance = 0, mode = 0, lambda = 0, force_max = 0}
+  if edge then t.layer = 4 t.group = 1 t.friction = 0.5 end
+  ecs.spawn(n, t)
+end
+for i = 1, 4 do link('e' .. i, 's' .. i, 's' .. (i % 4 + 1), 40, true) end
+link('d1', 's1', 's3', 56.5685, false)
+link('d2', 's2', 's4', 56.5685, false)
+point('ball', 320, 200, 1, 12, 2, 7, 0)
+return 'ok'
+"#;
+
+fn run_all(h: &Host, ticks: u32) {
+    let src = format!(
+        "for t = 1, {} do for i = 1, 16 do ecs.integrate_verlet(1/960, 0, 980, 0.999) ecs.solve_distance(1/960, 1) ecs.project_points(1) ecs.project_edges(1) ecs.project_segments(1) end end return 'ok'",
+        ticks
+    );
+    assert_eq!(h.probe(&src).unwrap(), "ok");
+}
+
+#[test]
+fn a_closed_body_and_a_ball_rest_on_the_ground_and_on_each_other() {
+    let h = host();
+    assert_eq!(h.probe(SQUARE).unwrap(), "ok");
+    run_all(&h, 400);
+    // the body lies on the ground, keeps its shape and does not push itself apart
+    for i in 1..=4 {
+        let y = num(&h, &format!("s{}", i), "y");
+        assert!(y <= 497.5 && y > 380.0, "corner {} at {}", i, y);
+    }
+    let side = ((num(&h, "s2", "x") - num(&h, "s1", "x")).powi(2) + (num(&h, "s2", "y") - num(&h, "s1", "y")).powi(2)).sqrt();
+    assert!((side - 40.0).abs() < 1.0, "side {}", side);
+    // the ball did not fall through the body: it is above the lowest corner and not inside the square
+    let (bx, by) = (num(&h, "ball", "x"), num(&h, "ball", "y"));
+    let top = ["s1", "s2", "s3", "s4"].iter().map(|n| num(&h, n, "y")).fold(f64::INFINITY, f64::min);
+    let inside = (300.0..340.0).contains(&bx) && by > top && by < top + 40.0;
+    assert!(!inside, "ball inside the body: ({}, {}) top {}", bx, by, top);
+    assert!(by < 490.0);
+}
+
+#[test]
+fn project_points_path_and_distances_work_from_lua() {
+    let h = host();
+    assert_eq!(h.probe(SCENE).unwrap(), "ok");
+    // the bridge is a line p0 - p1 - ... - p10: 10 links of 40
+    let r = h.probe("local ids, ds = ecs.distances(ecs.id('p0')) return #ids .. ' ' .. ds[#ds]").unwrap();
+    assert_eq!(r, "11 400.0");
+    // the way from one end to the other: 11 points, cost 400, the first and last are the ends
+    let r = h.probe("local way, c = ecs.path(ecs.id('p0'), ecs.id('p10')) return #way .. ' ' .. c .. ' ' .. tostring(way[1] == ecs.id('p0')) .. ' ' .. tostring(way[#way] == ecs.id('p10'))").unwrap();
+    assert_eq!(r, "11 400.0 true true");
+    // by hops
+    assert_eq!(h.probe("local _, c = ecs.path(ecs.id('p0'), ecs.id('p10'), 2) return c").unwrap(), "10.0");
+    // cut the bridge: no way
+    assert_eq!(h.probe("ecs.kill('b5') local w = ecs.path(ecs.id('p0'), ecs.id('p10')) return tostring(w)").unwrap(), "nil");
+    // two overlapping balls part
+    assert_eq!(h.probe("ecs.spawn('q1', {x = 700, y = 100, old_x = 700, old_y = 100, inv_mass = 1, radius = 10, layer = 2, mask = 2}) ecs.spawn('q2', {x = 710, y = 100, old_x = 710, old_y = 100, inv_mass = 1, radius = 10, layer = 2, mask = 2}) return ecs.project_points(1)").unwrap(), "1");
+    assert!((num(&h, "q2", "x") - num(&h, "q1", "x") - 20.0).abs() < 1e-9);
+    // a bad cost is refused
+    assert!(h.probe("return ecs.distances(ecs.id('p0'), 7)").is_err());
 }

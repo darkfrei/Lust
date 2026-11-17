@@ -173,7 +173,7 @@ fn clean_nonneg(v: f64) -> f64 {
 
 // ---------- points ----------
 
-fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3]) {
+fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3], group: f64) {
     let p = &mut s.pts;
     p.ent.push(e);
     p.x.push(v[0]);
@@ -184,6 +184,7 @@ fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3]) {
     p.r.push(if opt3[0].is_finite() && opt3[0] > 0.0 { opt3[0] } else { 0.0 });
     p.layer.push(to_bits(opt3[1]));
     p.mask.push(to_bits(opt3[2]));
+    p.grp.push(to_bits(group));
     p.contact.push(0.0);
     p.cnx.push(0.0);
     p.cny.push(0.0);
@@ -194,7 +195,7 @@ fn push_point(s: &mut Scratch, e: u32, v: [f64; 5], opt3: [f64; 3]) {
     s.slot_of[i] = (s.pts.ent.len() - 1) as u32;
 }
 
-// points: x, y, old_x, old_y, inv_mass required; radius (0), layer (1), mask (1) optional.
+// points: x, y, old_x, old_y, inv_mass required; radius (0), layer (1), mask (1), group (0) optional.
 // fills s.pts (w: negative or NaN becomes 0; contact, cnx, cny are the values in the world, 0 when missing) and s.slot_of.
 // None when a required column is missing
 pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
@@ -202,10 +203,11 @@ pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
     s.pts.clear();
     let req = need(world, ["x", "y", "old_x", "old_y", "inv_mass"])?;
     let (r, l, m) = (find(world, "radius"), find(world, "layer"), find(world, "mask"));
+    let grp = find(world, "group");
     let (cc, cx, cy) = (find(world, "contact"), find(world, "contact_nx"), find(world, "contact_ny"));
     for &e in shortest(world, &req) {
         if let Some(v) = read_all(world, &req, e) {
-            push_point(s, e, v, [opt(world, r, e, 0.0), opt(world, l, e, 1.0), opt(world, m, e, 1.0)]);
+            push_point(s, e, v, [opt(world, r, e, 0.0), opt(world, l, e, 1.0), opt(world, m, e, 1.0)], opt(world, grp, e, 0.0));
             // the contact of an earlier call stays (project_edges, then project_segments in
             // one substep must not wipe each other); only integrate_verlet clears it
             let k = s.pts.contact.len() - 1;
@@ -215,6 +217,14 @@ pub fn gather_points(world: &World, s: &mut Scratch) -> Option<PointCols> {
         }
     }
     Some(PointCols { x: req[0], y: req[1], ox: req[2], oy: req[3], contact: cc, cnx: cx, cny: cy })
+}
+
+// the position of an entity index in the gathered points, if it is one
+pub fn slot(s: &Scratch, e: u32) -> Option<usize> {
+    match s.slot_of.get(e as usize) {
+        Some(&k) if k != NONE => Some(k as usize),
+        _ => None,
+    }
 }
 
 // the entity -> position table is cleared again (only the entries gather_points set)
@@ -315,32 +325,35 @@ pub fn scatter_links(world: &mut World, s: &Scratch, c: &LinkCols) -> Result<(),
 
 // ---------- edges, segments ----------
 
-// edges: node_a, node_b, layer required (layer as bits); friction (0) optional. needs
+// edges: node_a, node_b, layer required (layer as bits); friction (0), radius (0), group (0) optional. needs
 // gather_points first
 pub fn gather_edges(world: &World, s: &mut Scratch) -> Option<EdgeCols> {
     s.edges.clear();
     let req = need(world, ["node_a", "node_b", "layer"])?;
-    let fric = find(world, "friction");
+    let (fric, rad, grp) = (find(world, "friction"), find(world, "radius"), find(world, "group"));
     for &e in shortest(world, &req) {
         let Some([va, vb, layer]) = read_all(world, &req, e) else { continue };
         let Some((a, b)) = ends(world, &s.slot_of, va, vb) else { continue };
         let f = opt(world, fric, e, 0.0);
         let k = s.edges.add(a as usize, b as usize, to_bits(layer), if f.is_finite() { f } else { 0.0 });
         s.edges.ent[k] = e;
+        s.edges.rad[k] = clean_nonneg(opt(world, rad, e, 0.0));
+        s.edges.grp[k] = to_bits(opt(world, grp, e, 0.0));
     }
     Some(EdgeCols {})
 }
 
-// segments: x1, y1, x2, y2 required; friction (0), layer (1) optional. no points needed
+// segments: x1, y1, x2, y2 required; friction (0), layer (1), radius (0) optional. no points needed
 pub fn gather_segs(world: &World, s: &mut Scratch) -> Option<SegCols> {
     s.segs.clear();
     let req = need(world, ["x1", "y1", "x2", "y2"])?;
-    let (fric, layer) = (find(world, "friction"), find(world, "layer"));
+    let (fric, layer, rad) = (find(world, "friction"), find(world, "layer"), find(world, "radius"));
     for &e in shortest(world, &req) {
         let Some([x1, y1, x2, y2]) = read_all(world, &req, e) else { continue };
         let f = opt(world, fric, e, 0.0);
         let k = s.segs.add(x1, y1, x2, y2, if f.is_finite() { f } else { 0.0 }, to_bits(opt(world, layer, e, 1.0)));
         s.segs.ent[k] = e;
+        s.segs.rad[k] = clean_nonneg(opt(world, rad, e, 0.0));
     }
     Some(SegCols {})
 }

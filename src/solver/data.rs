@@ -22,6 +22,9 @@ pub struct Points {
     pub r: Vec<f64>,
     pub layer: Vec<u32>,
     pub mask: Vec<u32>,
+    // a body number: points and edges of the same non-zero group never collide with each
+    // other (the vertices and the sides of one rigid shape); 0 is no group
+    pub grp: Vec<u32>,
     pub contact: Vec<f64>,
     pub cnx: Vec<f64>,
     pub cny: Vec<f64>,
@@ -46,6 +49,7 @@ impl Points {
         self.r.clear();
         self.layer.clear();
         self.mask.clear();
+        self.grp.clear();
         self.contact.clear();
         self.cnx.clear();
         self.cny.clear();
@@ -64,6 +68,7 @@ impl Points {
         self.r.push(r);
         self.layer.push(1);
         self.mask.push(1);
+        self.grp.push(0);
         self.contact.push(0.0);
         self.cnx.push(0.0);
         self.cny.push(0.0);
@@ -129,6 +134,9 @@ pub struct Edges {
     pub b: Vec<u32>,
     pub layer: Vec<u32>,
     pub fric: Vec<f64>,
+    // thickness: the edge is a capsule, a point must keep r + rad away from its line
+    pub rad: Vec<f64>,
+    pub grp: Vec<u32>,
 }
 
 impl Edges {
@@ -146,6 +154,8 @@ impl Edges {
         self.b.clear();
         self.layer.clear();
         self.fric.clear();
+        self.rad.clear();
+        self.grp.clear();
     }
 
     pub fn add(&mut self, a: usize, b: usize, layer: u32, fric: f64) -> usize {
@@ -155,6 +165,8 @@ impl Edges {
         self.b.push(b as u32);
         self.layer.push(layer);
         self.fric.push(fric);
+        self.rad.push(0.0);
+        self.grp.push(0);
         i
     }
 }
@@ -170,6 +182,8 @@ pub struct Segs {
     pub y2: Vec<f64>,
     pub fric: Vec<f64>,
     pub layer: Vec<u32>,
+    // thickness: the segment is a capsule (0 is a plain line)
+    pub rad: Vec<f64>,
 }
 
 impl Segs {
@@ -189,6 +203,7 @@ impl Segs {
         self.y2.clear();
         self.fric.clear();
         self.layer.clear();
+        self.rad.clear();
     }
 
     pub fn add(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, fric: f64, layer: u32) -> usize {
@@ -200,6 +215,7 @@ impl Segs {
         self.y2.push(y2);
         self.fric.push(fric);
         self.layer.push(layer);
+        self.rad.push(0.0);
         i
     }
 }
