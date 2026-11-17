@@ -1,6 +1,25 @@
 -- draws the bridge. fixed points (rigid fixings) are orange squares, free joints are blue
 -- circles, the cable is the white curve, the road is tan, the hanger is pink, the wheel is
 -- red, the mouse marker is a small cross. draw code only reads
+-- the load of a part against its strength as a color: green when light, yellow at half, red at
+-- the strength and beyond. the load of a link is its biggest force (force_max) or, for a cable,
+-- the tension of its shape, whichever is bigger
+local function load_color(id)
+  local strength = ecs.get(id, 'strength')
+  if not strength or strength <= 0 then return nil end
+  local load = math.max(ecs.get(id, 'force_max') or 0, ecs.get(id, 'tension') or 0)
+  local r = math.min(1, load / strength)
+  local red, green, blue
+  if r < 0.5 then
+    local t = r / 0.5
+    red, green, blue = 0.25 + 0.75 * t, 0.85, 0.3 - 0.1 * t
+  else
+    local t = (r - 0.5) / 0.5
+    red, green, blue = 1, 0.85 - 0.65 * t, 0.2
+  end
+  return string.format('#%02x%02x%02x', math.floor(red * 255), math.floor(green * 255), math.floor(blue * 255))
+end
+
 return function()
   gfx.size(800, 600)
   gfx.clear('#10203a')
@@ -23,17 +42,15 @@ return function()
           if cy > ys[low] then low = #xs end
         end
         local fold = ecs.get(lids[i], 'catenary_a') == 0 and ecs.get(lids[i], 'sag') > 0
-        local color = math.abs(xa - xb) < 5 and '#f8c' or '#fff'
+        local color = load_color(lids[i]) or '#fff'
         for s = 2, #xs do
           local x1, x2 = xs[s - 1], xs[s]
           if fold and s - 1 >= low then x1 = x1 + 5 end
           if fold and s > low then x2 = x2 + 5 end
-          gfx.line(x1, ys[s - 1], x2, ys[s], 2, color)
+          gfx.line(x1, ys[s - 1], x2, ys[s], 3, color)
         end
       elseif ecs.get(lids[i], 'layer') then
-        gfx.line(xa, ya, xb, yb, 4, '#c96')
-      elseif ecs.get(lids[i], 'mode') == 1 then
-        gfx.line(xa, ya, xb, yb, 2, '#f8c')
+        gfx.line(xa, ya, xb, yb, 5, load_color(lids[i]) or '#c96')
       else
         gfx.line(xa, ya, xb, yb, 1, '#456')
       end
@@ -52,4 +69,12 @@ return function()
       gfx.circle(ax[i], ay[i], 4, '#9cf')
     end
   end
+  -- the legend: the load of a part against its strength
+  for i = 0, 10 do
+    local r = i / 10
+    local red, green, blue
+    if r < 0.5 then red, green, blue = 0.25 + 1.5 * r, 0.85, 0.3 - 0.2 * r else red, green, blue = 1, 0.85 - 1.3 * (r - 0.5), 0.2 end
+    gfx.rect(20 + i * 14, 566, 14, 10, string.format('#%02x%02x%02x', math.floor(red * 255), math.floor(green * 255), math.floor(blue * 255)))
+  end
+  gfx.text(20, 552, 12, '#aab', 'load / strength: 0 ... 100 %')
 end

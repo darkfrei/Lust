@@ -4,10 +4,10 @@ use super::attach;
 use crate::ecs::{Spec, World};
 use crate::host::Host;
 
-const COLS: [&str; 28] = [
+const COLS: [&str; 29] = [
     "x", "y", "old_x", "old_y", "inv_mass", "radius", "layer", "mask", "contact", "contact_nx", "contact_ny", "node_a", "node_b",
     "rest_len", "compliance", "mode", "lambda", "force_max", "x1", "y1", "x2", "y2", "friction", "catenary_a", "catenary_x0",
-    "catenary_y0", "sag", "group",
+    "catenary_y0", "sag", "group", "tension",
 ];
 
 fn host() -> Host {
@@ -212,4 +212,20 @@ fn project_points_path_and_distances_work_from_lua() {
     assert!((num(&h, "q2", "x") - num(&h, "q1", "x") - 20.0).abs() < 1e-9);
     // a bad cost is refused
     assert!(h.probe("return ecs.distances(ecs.id('p0'), 7)").is_err());
+}
+
+#[test]
+fn a_cable_reports_its_tension() {
+    let h = host();
+    let src = r#"
+      ecs.spawn('l', {x = 0, y = 0, old_x = 0, old_y = 0, inv_mass = 0})
+      ecs.spawn('r', {x = 200, y = 0, old_x = 200, old_y = 0, inv_mass = 0})
+      ecs.spawn('c', {node_a = ecs.id('l'), node_b = ecs.id('r'), rest_len = 220, compliance = 0, mode = 1, lambda = 0,
+        force_max = 0, catenary_a = 0, catenary_x0 = 0, catenary_y0 = 0, sag = 0, linear_density = 0.5, tension = 0})
+      ecs.update_catenary(980)
+      return 'ok'"#;
+    assert_eq!(h.probe(src).unwrap(), "ok");
+    let t = num(&h, "c", "tension");
+    // a cable that hangs on its own weight (0.5 * 980 * 220 = 107800) pulls its ends with at least half of it
+    assert!(t > 53000.0 && t.is_finite(), "tension {}", t);
 }

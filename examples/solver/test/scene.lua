@@ -26,3 +26,7 @@ assert(get('joint_3', 'damping') == 0.996 and get('wheel', 'damping') == 0.984, 
 assert(get('beam_1', 'mode') == 1, 'a road link is not a rope')
 assert(get('joint_2', 'y') > 305, 'the road does not sag: ' .. get('joint_2', 'y'))
 assert(get('joint_5', 'y') < get('joint_2', 'y'), 'the hanger does not lift the middle')
+-- every part has a strength of its own, and cables tell their tension
+assert(get('beam_1', 'strength') ~= get('beam_2', 'strength'), 'strengths are not individual')
+assert(get('cable_a', 'tension') > 0 and get('hanger', 'strength') > 0, 'no tension or strength')
+draw()

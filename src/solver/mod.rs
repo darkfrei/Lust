@@ -349,6 +349,10 @@ fn update_catenary(w: &mut World, s: &mut Scratch, args: Args) -> mlua::Result<i
         for i in 0..n {
             let Some(ends) = cable_ends(s, i) else { continue };
             let sh = catenary::shape_loaded(ends, s.cables.len[i], gy, s.cables.slack[i]);
+            // the tension at the end that pulls harder: the length of the force on that end
+            let (fa, fb) = catenary::end_forces(&sh, ends, s.cables.len[i], s.cables.rho[i], gy);
+            let t = fa.0.hypot(fa.1).max(fb.0.hypot(fb.1));
+            s.cables.tension[i] = if t.is_finite() { t } else { 0.0 };
             if let Some(slot) = s.cables.shape.get_mut(i) {
                 *slot = sh;
             }

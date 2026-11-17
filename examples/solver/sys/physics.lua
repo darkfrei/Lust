@@ -20,15 +20,17 @@ end
 
 -- a link between two named points. mode 0 keeps the length, 1 only stops it from getting
 -- longer (a rope), comp is the softness (0 is hard). road links have a layer (the wheel rides on them)
-local function link(name, a, b, rest, comp, mode, layer)
+-- strength is the load the part carries (in the same units as force_max and tension) before it
+-- would break; nothing breaks yet, the drawing only colors the load against it
+local function link(name, a, b, rest, comp, mode, layer, strength)
   local c = {node_a = ecs.id(a), node_b = ecs.id(b), rest_len = rest, compliance = comp,
-    mode = mode, lambda = 0, force_max = 0}
+    mode = mode, lambda = 0, force_max = 0, strength = strength}
   if layer then c.layer = layer c.friction = 0.8 end
   ecs.spawn(name, c)
 end
 
-local function cable(name, a, b, rest)
-  link(name, a, b, rest, 0, 1, nil)
+local function cable(name, a, b, rest, strength)
+  link(name, a, b, rest, 0, 1, nil, strength)
   ecs.set(name, 'catenary_a', 0)
   ecs.set(name, 'catenary_x0', 0)
   ecs.set(name, 'catenary_y0', 0)
@@ -37,6 +39,12 @@ local function cable(name, a, b, rest)
   -- a loaded cable is never exactly taut: at least 0.1 % of the chord is slack (its tension
   -- stays finite and keeps pulling the ends into balance)
   ecs.set(name, 'min_slack', 0.001)
+  ecs.set(name, 'tension', 0)
+end
+
+-- every beam has a strength of its own: 1.0 to 1.4 million, a different one each
+local function beam_strength(i)
+  return 1000000 + 100000 * ((i * 7) % 5)
 end
 
 local function build()
@@ -47,19 +55,19 @@ local function build()
   for i = 1, N do
     -- the road joints are 4 times heavier than the cable joint: mass 40, inv_mass 0.025
     point('joint_' .. i, 100 + i * 40, 300, 0.025, 3, 8, 1, 0.996)
-    link('beam_' .. i, prev, 'joint_' .. i, BEAM, 0, 1, 4)
+    link('beam_' .. i, prev, 'joint_' .. i, BEAM, 0, 1, 4, beam_strength(i))
     prev = 'joint_' .. i
   end
-  link('beam_' .. (N + 1), prev, 'road_r', BEAM, 0, 1, 4)
+  link('beam_' .. (N + 1), prev, 'road_r', BEAM, 0, 1, 4, beam_strength(N + 1))
   -- the cable: fixed at both ends, one free joint in the middle
   point('cable_l', 100, 100, 0, 0, 1, 1)
   point('cable_r', 500, 100, 0, 0, 1, 1)
   point('hang', 300, 190, 0.1, 3, 8, 1, 0.996)
-  cable('cable_a', 'cable_l', 'hang', 220)
-  cable('cable_b', 'hang', 'cable_r', 220)
+  cable('cable_a', 'cable_l', 'hang', 220, 2000000)
+  cable('cable_b', 'hang', 'cable_r', 220, 1900000)
   -- the only hanger: a rope (it sags when slack, it never pushes) from the cable joint to the
   -- middle of the road. a strut (mode 2) would be the one that gets compressed
-  cable('hanger', 'hang', 'joint_5', 110)
+  cable('hanger', 'hang', 'joint_5', 110, 1600000)
   -- the wheel and the mouse: a soft spring of length 0 pulls the wheel to the mouse
   point('wheel', 200, 250, 0.02, 12, 16, 23, 0.984)
   point('mouse', 200, 250, 0, 0, 32, 0)

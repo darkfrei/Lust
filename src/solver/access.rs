@@ -36,6 +36,9 @@ pub struct Cables {
     pub rho: Vec<f64>,
     // the least slack as a share of the chord (column min_slack, 0.001 when missing)
     pub slack: Vec<f64>,
+    // out: the bigger of the tensions at the two ends (the length of the end force), written
+    // to the column `tension` when it exists. update_catenary fills it
+    pub tension: Vec<f64>,
     // out: to be filled by the caller, written by scatter_cables. gather fills it with
     // Shape::straight()
     pub shape: Vec<Shape>,
@@ -75,6 +78,7 @@ pub struct CableCols {
     x0: Option<usize>,
     y0: Option<usize>,
     sag: Option<usize>,
+    tension: Option<usize>,
 }
 
 // ---------- small helpers ----------
@@ -373,6 +377,7 @@ pub fn gather_cables(world: &World, s: &mut Scratch) -> Option<CableCols> {
     s.cables.len.clear();
     s.cables.rho.clear();
     s.cables.slack.clear();
+    s.cables.tension.clear();
     s.cables.shape.clear();
     let req = need(world, ["node_a", "node_b", "rest_len", "catenary_a"])?;
     let rho = find(world, "linear_density");
@@ -390,16 +395,18 @@ pub fn gather_cables(world: &World, s: &mut Scratch) -> Option<CableCols> {
         cb.len.push(len);
         cb.rho.push(clean_nonneg(opt(world, rho, e, 0.0)));
         cb.slack.push(opt(world, min_slack, e, 0.001));
+        cb.tension.push(0.0);
         cb.shape.push(Shape::straight());
     }
-    Some(CableCols { a: Some(req[3]), x0: find(world, "catenary_x0"), y0: find(world, "catenary_y0"), sag: find(world, "sag") })
+    Some(CableCols { a: Some(req[3]), x0: find(world, "catenary_x0"), y0: find(world, "catenary_y0"), sag: find(world, "sag"), tension: find(world, "tension") })
 }
 
-// writes catenary_a, catenary_x0, catenary_y0, sag from s.cables.shape (the columns that exist)
+// writes catenary_a, catenary_x0, catenary_y0, sag, tension from s.cables (the columns that exist)
 pub fn scatter_cables(world: &mut World, s: &Scratch, c: &CableCols) -> Result<(), String> {
     let cb = &s.cables;
     let (fa, fx, fy, fs) = (|i: usize| cb.shape[i].a, |i: usize| cb.shape[i].x0, |i: usize| cb.shape[i].y0, |i: usize| cb.shape[i].sag);
-    let jobs: [Job; 4] = [(c.a, &cb.ent, &fa), (c.x0, &cb.ent, &fx), (c.y0, &cb.ent, &fy), (c.sag, &cb.ent, &fs)];
+    let ft = |i: usize| cb.tension[i];
+    let jobs: [Job; 5] = [(c.a, &cb.ent, &fa), (c.x0, &cb.ent, &fx), (c.y0, &cb.ent, &fy), (c.sag, &cb.ent, &fs), (c.tension, &cb.ent, &ft)];
     scatter(world, &jobs)
 }
 
