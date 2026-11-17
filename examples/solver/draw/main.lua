@@ -10,10 +10,10 @@ return function()
   end
   local k, lids, la, lb = ecs.query('node_a', 'node_b')
   for i = 1, k do
-    local xa = ecs.get(la[i], 'x')
-    local ya = ecs.get(la[i], 'y')
-    local xb = ecs.get(lb[i], 'x')
-    local yb = ecs.get(lb[i], 'y')
+    -- link ends are numbers in a num column (floats): ecs.get wants an integer id
+    local ea, eb = math.tointeger(la[i]), math.tointeger(lb[i])
+    local xa, ya = ecs.get(ea, 'x'), ecs.get(ea, 'y')
+    local xb, yb = ecs.get(eb, 'x'), ecs.get(eb, 'y')
     if xa and xb then
       if ecs.get(lids[i], 'catenary_a') then
         local px, py = xa, ya
