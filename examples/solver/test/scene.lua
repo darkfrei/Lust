@@ -29,4 +29,23 @@ assert(get('joint_5', 'y') < get('joint_2', 'y'), 'the hanger does not lift the 
 -- every part has a strength of its own, and cables tell their tension
 assert(get('beam_1', 'strength') ~= get('beam_2', 'strength'), 'strengths are not individual')
 assert(get('cable_a', 'tension') > 0 and get('hanger', 'strength') > 0, 'no tension or strength')
+-- masses come from the beams: mass0 1 + half of two beams of 40.5 (density 1)
+assert(math.abs(1 / get('joint_3', 'inv_mass') - 41.5) < 1e-6, 'joint mass: ' .. 1 / get('joint_3', 'inv_mass'))
+-- a weak beam is judged in one tick and breaks in the next: two half beams and two new joints
+-- replace it, the mass moves (a quarter of the beam to each new joint), the halves do not break
+mouse(150, 250, false)
+set('beam_5', 'strength', '1')
+step(1)
+assert(get('beam_5', 'doomed') == 1, 'the weak beam was not judged')
+step(1)
+assert(get('beam_5', 'rest_len') == nil, 'the broken beam is still there')
+-- joint_4 now carries beam_4 / 2 and a half beam / 2: 1 + 20.25 + 10.125
+assert(math.abs(1 / get('joint_4', 'inv_mass') - 31.375) < 1e-6, 'mass after the break: ' .. 1 / get('joint_4', 'inv_mass'))
+step(300)
+assert(get('joint_4', 'y') < 520 and get('hang', 'y') < 300, 'the bridge flew apart')
+-- a rope breaks too and the halves hang
+set('hanger', 'strength', '1')
+step(2)
+assert(get('hanger', 'rest_len') == nil, 'the broken hanger is still there')
+step(120)
 draw()
