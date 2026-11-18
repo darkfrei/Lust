@@ -131,6 +131,12 @@ pub fn handle<T: Tools + ?Sized>(t: &mut T, msg: &Value) -> Option<Value> {
     }
 }
 
+// the answer of a tool given later than its call (the program waited for something, as
+// lust_listen waits for the words of the person), as one line
+pub fn late_answer(id: Value, text: String, is_error: bool) -> String {
+    rpc_result(id, tool_text(text, is_error)).to_string()
+}
+
 // the same for one line of text (stdio: one JSON message per line); a line that is not
 // JSON gets the parse error of JSON-RPC
 pub fn handle_text<T: Tools + ?Sized>(t: &mut T, line: &str) -> Option<String> {

@@ -47,12 +47,13 @@ cargo test
 cargo build --release                           # the program lust
 target/release/lust                             # a double click: the games next to it as buttons in a window
 target/release/lust run examples/pong           # Pong, built by an AI through MCP, in a window (--web: in the browser)
-target/release/lust dev <folder>                # an MCP server: an AI builds in that folder
+target/release/lust dev                         # an MCP server: an AI builds the games of the folder games beside lust
 ```
 
 **Windows without Rust:** a ready `lust-windows.zip` (lust.exe, example games, two `.bat`
-files) is in [Releases](../../releases); built by GitHub itself (`.github/workflows/windows.yml`).
-Unpack it anywhere and double click `lust.exe`.
+files, the speech recognizer vosk) is in [Releases](../../releases); built by GitHub itself
+(`.github/workflows/windows.yml`). Unpack it anywhere and double click `lust.exe`. For orders
+by voice in `lust dev`, unpack `lust-voice-ru.zip` (the russian model, about 45 MB) beside it.
 
 ```rust
 use lust::host::Host;
@@ -254,12 +255,16 @@ the kingdom's journal.
 The program `lust` (`src/bin/lust.rs`) runs a folder of Lua files: `world.lua` (the start:
 types and entities), `sys/*.lua` (systems), `draw/*.lua` (drawing), `op/*.lua`
 (operations), `view/`, `rule/`, `lib/`, and `test/*.lua` (tests). `lust dev <folder>` is an
-MCP server over stdio: an AI reads one guide, writes and edits the files, tries code on a
+MCP server over stdio (without a folder: the folder `games` beside lust, the AI opens the
+game the person names): an AI reads one guide, writes and edits the files, tries code on a
 fresh world, runs the tests, and takes changes back. A change is hot: code that does not
 compile is refused, code that does replaces the old from the next tick, the values stay.
 The person sees the live world in a window of its own (`src/native`, feature `native`:
 winit and pixels, the picture through the video card, as the overlay of Steam needs; cpal for
-the loudness of the microphone), or in the browser with `--web` (`src/web.rs`). Pong built this way from an empty folder took 11 MCP messages and about
+the loudness of the microphone), or in the browser with `--web` (`src/web.rs`). In `lust dev`
+the microphone stays on: the AI can wait for the words of the person (`lust_listen`, vosk on
+this computer), and a squircle in the corner shows the AI (its ring) and the voice (its
+inside). One window for all AI clients. Pong built this way from an empty folder took 11 MCP messages and about
 3 000 tokens of content. All of it: [docs/dev.md](docs/dev.md).
 
 ## The door for an AI (`src/mcp.rs`)

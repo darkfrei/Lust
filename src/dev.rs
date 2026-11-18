@@ -10,6 +10,9 @@
 //   lust_restart  the live world again from world.lua
 //   lust_try      driver code on a fresh world (or the live one)
 //   lust_test     the tests of the project
+// the program lust dev adds two (src/bin/lust.rs, desk_tools):
+//   lust_open     the game the person names (a folder in games); a new name makes one
+//   lust_listen   waits for the words of the person (the microphone of the window, voice.rs)
 // a change that does not compile is refused and nothing is saved; a change that is saved
 // is tried at once on a fresh world (one tick, one frame) and the answer says how it went.
 use crate::driver::{run_tests, Driver};
@@ -93,9 +96,52 @@ The driver has no ecs, input, gfx: it looks at the world from outside with get/s
 draw() -> the frame as text lines   events() -> what the world told the display since the last call, e.g. {'quit'}   run(role, op, {k = v})   view(name [, arg])   ms()
 print(...) and returned values are the answer (numbers 4 decimals).
 
+GAMES AND VOICE
+The person names the game: lust_open(name) opens the folder games/<name> (a new name makes it, with an empty world.lua); lust_open() lists the games. Every other tool works on the open game.
+When the person asks you to listen (listen, слушай), call lust_listen: it waits up to 45 s and gives the words the person said (a recognizer on this computer; it mishears sometimes, so take the likely meaning and ask when unsure). Do what they said, answer in one or two short sentences, then call lust_listen again. Nothing heard: call it again. Stop listening when the person says stop (стоп, хватит).
+
 TOOLS
 lust_write and lust_edit refuse code that does not compile (nothing is saved); a saved change is tried on a fresh world (one tick, one frame) and the answer says how. lust_edit: old must occur once; several edits at once with edits = [{old, new}]. lust_files shows where the person sees the live world.
 "#;
+
+// the tools of one game (DevTools)
+pub fn game_tools() -> Vec<Tool> {
+    let none = json!({"type": "object", "properties": {}});
+    let path = json!({"type": "string"});
+    vec![
+        tool("lust_guide", "The project format and every lua function. Read it once.", none.clone(), true),
+        tool("lust_files", "The files (path and lines) and how the live world is.", none.clone(), true),
+        tool("lust_read", "A file, or its lines from..to.", json!({"type": "object", "properties": {"path": path, "from": {"type": "integer"}, "to": {"type": "integer"}}, "required": ["path"]}), true),
+        tool("lust_write", "Write a whole file; the live world takes it at once.", json!({"type": "object", "properties": {"path": path, "text": {"type": "string"}}, "required": ["path", "text"]}), false),
+        tool(
+            "lust_edit",
+            "Replace exact text in a file: old (occurs once) by new, or edits = [{old, new}].",
+            json!({"type": "object", "properties": {"path": path, "old": {"type": "string"}, "new": {"type": "string"}, "edits": {"type": "array", "items": {"type": "object", "properties": {"old": {"type": "string"}, "new": {"type": "string"}}, "required": ["old", "new"]}}}, "required": ["path"]}),
+            false,
+        ),
+        tool("lust_delete", "Delete a file.", json!({"type": "object", "properties": {"path": path}, "required": ["path"]}), false),
+        tool("lust_undo", "Take the last n changes of files back (1).", json!({"type": "object", "properties": {"n": {"type": "integer"}}}), false),
+        tool("lust_restart", "The live world again from world.lua.", none.clone(), false),
+        tool("lust_pack", "Make the game one file a person double clicks (dist/<folder name>, .exe on Windows); it opens on the menu of the game. Do it when the game is ready.", none, false),
+        tool(
+            "lust_try",
+            "Run driver code (see the guide) on a fresh world, or on the live one with live = true; answers what it printed and returned.",
+            json!({"type": "object", "properties": {"code": {"type": "string"}, "live": {"type": "boolean"}}, "required": ["code"]}),
+            false,
+        ),
+        tool("lust_test", "Run the tests test/*.lua, each on a fresh world, or only the one named.", json!({"type": "object", "properties": {"name": {"type": "string"}}}), true),
+    ]
+}
+
+// the tools of lust dev: the tools of one game, the choice of the game, the voice
+pub fn desk_tools() -> Vec<Tool> {
+    let mut v = vec![
+        tool("lust_open", "Open the game the person names: the folder games/<name> (a new name makes it). Without a name: the list of games.", json!({"type": "object", "properties": {"name": {"type": "string"}}}), false),
+        tool("lust_listen", "Wait up to 45 s for the words the person says into the microphone; gives what was heard (see the guide, GAMES AND VOICE).", json!({"type": "object", "properties": {"seconds": {"type": "integer"}}}), true),
+    ];
+    v.extend(game_tools());
+    v
+}
 
 pub struct DevTools<'a> {
     pub s: &'a mut Session,
@@ -287,31 +333,7 @@ impl Tools for DevTools<'_> {
     }
 
     fn tools(&self) -> Vec<Tool> {
-        let none = json!({"type": "object", "properties": {}});
-        let path = json!({"type": "string"});
-        vec![
-            tool("lust_guide", "The project format and every lua function. Read it once.", none.clone(), true),
-            tool("lust_files", "The files (path and lines) and how the live world is.", none.clone(), true),
-            tool("lust_read", "A file, or its lines from..to.", json!({"type": "object", "properties": {"path": path, "from": {"type": "integer"}, "to": {"type": "integer"}}, "required": ["path"]}), true),
-            tool("lust_write", "Write a whole file; the live world takes it at once.", json!({"type": "object", "properties": {"path": path, "text": {"type": "string"}}, "required": ["path", "text"]}), false),
-            tool(
-                "lust_edit",
-                "Replace exact text in a file: old (occurs once) by new, or edits = [{old, new}].",
-                json!({"type": "object", "properties": {"path": path, "old": {"type": "string"}, "new": {"type": "string"}, "edits": {"type": "array", "items": {"type": "object", "properties": {"old": {"type": "string"}, "new": {"type": "string"}}, "required": ["old", "new"]}}}, "required": ["path"]}),
-                false,
-            ),
-            tool("lust_delete", "Delete a file.", json!({"type": "object", "properties": {"path": path}, "required": ["path"]}), false),
-            tool("lust_undo", "Take the last n changes of files back (1).", json!({"type": "object", "properties": {"n": {"type": "integer"}}}), false),
-            tool("lust_restart", "The live world again from world.lua.", none.clone(), false),
-            tool("lust_pack", "Make the game one file a person double clicks (dist/<folder name>, .exe on Windows); it opens on the menu of the game. Do it when the game is ready.", none, false),
-            tool(
-                "lust_try",
-                "Run driver code (see the guide) on a fresh world, or on the live one with live = true; answers what it printed and returned.",
-                json!({"type": "object", "properties": {"code": {"type": "string"}, "live": {"type": "boolean"}}, "required": ["code"]}),
-                false,
-            ),
-            tool("lust_test", "Run the tests test/*.lua, each on a fresh world, or only the one named.", json!({"type": "object", "properties": {"name": {"type": "string"}}}), true),
-        ]
+        game_tools()
     }
 
     fn call(&mut self, name: &str, args: &Value) -> Result<String, String> {

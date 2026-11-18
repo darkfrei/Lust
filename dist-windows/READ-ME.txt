@@ -4,9 +4,17 @@ Lust: games in Lua, run in a window of their own.
    Click one or use arrows and Enter. F1 in a game comes back to the list.
 2. A game of your own: put its folder (with a world.lua inside) into "games".
 3. An AI that builds a game for you: double click lust-dev.bat and follow what it says.
+   Closing that window only puts it into the taskbar: the AI goes on. It ends when you quit
+   Claude Desktop.
+   The square sign top right: its ring is the AI (grey: none yet, green: connected, blue: it
+   listens to you), its inside your microphone (it grows when you speak).
+   To give the AI orders by voice: unpack lust-voice-ru.zip into this folder (the russian
+   speech recognizer, about 45 MB, works without internet), then say "listen" (or "слушай")
+   in the chat. The words it heard show under the sign. "Stop" (стоп) ends it.
 4. If a window does not open on your computer, lust opens the game in your browser.
-5. The microphone: a game that asks for it makes the window show a red dot; Windows may ask
-   once, or block it in Settings, Privacy, Microphone.
+5. The microphone: a game that asks for it, or the AI of lust-dev, turns it on and the sign
+   shows it; Windows may ask once, or block it in Settings, Privacy, Microphone. The sound
+   never leaves this computer.
 
 If Windows SmartScreen says "unknown publisher": the program is not signed (a signature costs
 money). "More info", then "Run anyway".

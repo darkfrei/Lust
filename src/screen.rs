@@ -101,7 +101,34 @@ pub struct Exchange {
     pub last_event: u64,
     // the highest number a display said it has
     pub acked: u64,
+    // lust dev: the AI and the voice of the person, beside the world (never part of it).
+    // the program says how the AI is linked and that the microphone must stay on (listen);
+    // the window says what the person said (heard, taken by the program) and whether it can
+    // hear words at all (voice: empty while it cannot say yet)
+    pub link: Link,
+    pub listen: bool,
+    pub heard: Vec<String>,
+    pub voice: String,
+    // the name of what is shown (the window puts it in its title)
+    pub title: String,
 }
+
+// how an AI is linked to lust dev, for the sign in the window
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Link {
+    // not lust dev
+    #[default]
+    None,
+    // lust dev runs, no AI has said hello yet
+    Waiting,
+    // an AI is connected
+    Connected,
+    // an AI waits for the words of the person (lust_listen)
+    Listening,
+}
+
+// how many phrases wait for the AI at most
+pub const HEARD_MAX: usize = 20;
 
 // how many events wait for the displays at most, and for how long
 pub const EVENTS_KEPT: usize = 64;
@@ -174,6 +201,19 @@ impl Exchange {
                 (self.events.iter().filter(|(n, _, _)| *n > a).map(|(n, _, t)| (*n, t.clone())).collect(), self.last_event)
             }
             _ => (Vec::new(), self.last_event),
+        }
+    }
+
+    // the window heard the person say something (lust dev); the oldest go when too many wait
+    pub fn put_heard(&mut self, phrase: &str) {
+        let p: String = phrase.chars().filter(|c| !c.is_control()).take(EVENT_MAX).collect();
+        if p.trim().is_empty() {
+            return;
+        }
+        self.heard.push(p.trim().to_string());
+        if self.heard.len() > HEARD_MAX {
+            let extra = self.heard.len() - HEARD_MAX;
+            self.heard.drain(..extra);
         }
     }
 
@@ -589,5 +629,20 @@ mod tests {
         let e = draw(&host, &s).unwrap_err();
         assert!(e.contains("event_in_draw"), "{}", e);
         assert!(s.take_events().is_empty());
+    }
+
+    #[test]
+    fn the_words_of_the_person_wait_for_the_ai_and_the_oldest_go() {
+        let mut e = Exchange::default();
+        e.put_heard("  \u{434}\u{43e}\u{431}\u{430}\u{432}\u{44c} \u{438}\u{433}\u{440}\u{43e}\u{43a}\u{430} ");
+        e.put_heard("   ");
+        e.put_heard("a\nb");
+        assert_eq!(e.heard, vec![String::from("\u{434}\u{43e}\u{431}\u{430}\u{432}\u{44c} \u{438}\u{433}\u{440}\u{43e}\u{43a}\u{430}"), String::from("ab")]);
+        for i in 0..HEARD_MAX + 5 {
+            e.put_heard(&format!("p{}", i));
+        }
+        assert_eq!(e.heard.len(), HEARD_MAX);
+        assert_eq!(e.heard.last().map(|s| s.as_str()), Some("p24"));
+        assert_eq!(e.link, Link::None, "not lust dev until the program says so");
     }
 }

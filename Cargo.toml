@@ -14,12 +14,14 @@ keywords = ["ecs", "lua", "sandbox", "journal", "mcp"]
 # pixels shows the picture through the video card (so the overlay of Steam works), cpal hears
 # the microphone (only its loudness reaches the world). linux needs libasound2-dev to build it.
 # to remove it: delete the folder src/native, the native lines in src/lib.rs and
-# src/bin/lust.rs, this block and the three optional crates below
+# src/bin/lust.rs, this block and the four optional crates below. libloading opens the
+# speech recognizer vosk (libvosk.dll / libvosk.so beside lust) while lust runs, only when it
+# is there: lust builds and runs without it, then the window says that it hears no words
 [features]
 default = ["mcp", "web", "solver", "native"]
 mcp = []
 web = []
-native = ["dep:winit", "dep:pixels", "dep:cpal"]
+native = ["dep:winit", "dep:pixels", "dep:cpal", "dep:libloading"]
 # solver: a solver of constraints over num columns (src/solver/), ecs.integrate_verlet and
 # the rest. to remove it: delete the folder src/solver, the solver lines in src/lib.rs and
 # src/project.rs, and this line
@@ -36,6 +38,7 @@ sha2 = "0.10"
 winit = { version = "0.30", optional = true }
 pixels = { version = "0.17", optional = true }
 cpal = { version = "0.18", optional = true }
+libloading = { version = "0.8", optional = true }
 
 # the example of the door needs mcp (see [features])
 [[example]]

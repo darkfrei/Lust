@@ -298,6 +298,22 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    // a squircle: a square with round sides, |dx|^4 + |dy|^4 = r^4 (the sign of the window
+    // for the microphone and the AI)
+    pub fn squircle(&mut self, x: f32, y: f32, r: f32, c: [u8; 4]) {
+        if r <= 0.0 {
+            return;
+        }
+        let (ax, ay, bx, by) = self.span(x - r - 1.0, y - r - 1.0, x + r + 1.0, y + r + 1.0);
+        for py in ay..by {
+            for px in ax..bx {
+                let (dx, dy) = ((px as f32 + 0.5 - x).abs(), (py as f32 + 0.5 - y).abs());
+                let d = (dx * dx * dx * dx + dy * dy * dy * dy).sqrt().sqrt();
+                self.blend(px, py, c, r - d + 0.5);
+            }
+        }
+    }
+
     // a line of a width with flat ends (lineCap butt, as a canvas draws it)
     pub fn line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, width: f32, c: [u8; 4]) {
         let (dx, dy) = (x2 - x1, y2 - y1);

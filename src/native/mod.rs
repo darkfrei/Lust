@@ -4,10 +4,14 @@
 // winit makes the window and reads the keys; pixels puts a picture into it through the video
 // card (DirectX 12 or Vulkan on Windows), which is what the overlay of Steam needs; the
 // picture itself is drawn by the processor (draw.rs); cpal hears the microphone when the
-// world asks for it (mic.rs), and only its loudness goes on. leave it out with the feature "native".
+// world asks for it (mic.rs), and only its loudness goes on. in lust dev the microphone stays
+// on and its words go to the AI (voice.rs, vosk), and a squircle in the corner shows both:
+// the ring how the AI is linked, the inside how loud the person speaks. a closed window of
+// lust dev only goes to the taskbar: the AI goes on with its work. leave it out with the
+// feature "native".
 // the window runs on the main thread (winit wants that); the world runs on a thread of its own.
 // every window has its own Exchange: today lust opens one, a second one is another Win
-use crate::screen::Exchange;
+use crate::screen::{Exchange, Link};
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -15,6 +19,7 @@ use std::time::{Duration, Instant};
 
 pub mod draw;
 pub mod mic;
+pub mod voice;
 
 use draw::{Canvas, Font, Place};
 use pixels::{Pixels, SurfaceTexture};
@@ -36,6 +41,10 @@ const LOOK_EVERY: Duration = Duration::from_millis(2);
 // the color of the status line (why the world stopped), as on the page
 const STATUS_COLOR: [u8; 4] = [0xff, 0x77, 0x77, 255];
 const NOTE_COLOR: [u8; 4] = [0xdd, 0xdd, 0xdd, 255];
+const WORDS_COLOR: [u8; 4] = [0xff, 0xff, 0xff, 255];
+const TROUBLE_COLOR: [u8; 4] = [0xff, 0xaa, 0x55, 255];
+// a phrase the person said stays under the sign this long
+const SAID_FOR: Duration = Duration::from_secs(6);
 
 // ---------- the keys ----------
 
@@ -199,30 +208,109 @@ struct Win {
     seq: u64,
     asked: Instant,
     mic: mic::Mic,
+    // lust dev: the words of the person (started when the program asks for it), the last
+    // phrase and when it was said, the words being said now, and why there are no words
+    hearing: Option<voice::Hearing>,
+    said: Option<(String, Instant)>,
+    partial: String,
+    voice: String,
+    title: String,
+}
+
+// what the sign in the corner shows
+pub struct Sign {
+    pub link: Link,
+    // the microphone: None while off, else its level 0..1
+    pub level: Option<f32>,
+    // a line under the sign: the words of the person, or a trouble (true)
+    pub words: String,
+    pub trouble: bool,
+    // the note beside it ("AI listening", "microphone on", a failed microphone)
+    pub note: String,
+}
+
+// the color of the ring of the sign: how the AI is linked
+pub fn ring_color(link: Link) -> [u8; 4] {
+    match link {
+        Link::None | Link::Waiting => [0x88, 0x88, 0x88, 255],
+        Link::Connected => [0x44, 0xcc, 0x44, 255],
+        Link::Listening => [0x44, 0xcc, 0xff, 255],
+    }
+}
+
+// the note beside the sign
+pub fn link_note(link: Link) -> &'static str {
+    match link {
+        Link::None => "",
+        Link::Waiting => "waiting for the AI",
+        Link::Connected => "AI connected",
+        Link::Listening => "AI listening",
+    }
 }
 
 // a picture in the corners of the window, in its pixels: the status (why the world stopped)
-// and the sign that the microphone is on, with how loud it hears
-fn overlay(cv: &mut Canvas, font: &Font, scale: f32, status: &str, mic: Option<(String, Option<f32>)>) {
+// bottom left, and the sign top right: a squircle, its ring the AI, its inside the microphone
+fn overlay(cv: &mut Canvas, font: &Font, scale: f32, status: &str, sign: Option<&Sign>) {
     let size = 14.0 * scale;
     if !status.is_empty() {
         let y = cv.h as f32 - 8.0 * scale - size * crate::screen::LINE as f32;
         cv.text(font, 8.0 * scale, y, size, STATUS_COLOR, status);
     }
-    if let Some((note, level)) = mic {
-        let line = size * crate::screen::LINE as f32;
-        let bar = if level.is_some() { 68.0 * scale } else { 0.0 };
-        let dot = 18.0 * scale;
-        let w = dot + note.chars().count() as f32 * font.advance * size + bar + 12.0 * scale;
-        let (x, y) = (cv.w as f32 - w - 8.0 * scale, 8.0 * scale);
-        cv.rect(x, y, w, line + 6.0 * scale, [0, 0, 0, 166]);
-        cv.circle(x + 11.0 * scale, y + 3.0 * scale + line / 2.0, 5.0 * scale, [0xff, 0x33, 0x33, 255]);
-        cv.text(font, x + dot, y + 3.0 * scale, size, NOTE_COLOR, &note);
-        if let Some(l) = level {
-            let bx = x + dot + note.chars().count() as f32 * font.advance * size + 8.0 * scale;
-            cv.rect(bx, y + 3.0 * scale + line / 2.0 - 3.0 * scale, 60.0 * scale * l, 6.0 * scale, [0x66, 0xff, 0x66, 255]);
+    let Some(sg) = sign else { return };
+    let r = 17.0 * scale;
+    let (cx, cy) = (cv.w as f32 - 8.0 * scale - r, 8.0 * scale + r);
+    let line = size * crate::screen::LINE as f32;
+    let width = |t: &str, sz: f32| t.chars().count() as f32 * font.advance * sz;
+    // the texts left of the sign, on a dark plate
+    let words: String = sg.words.chars().take(60).collect();
+    let wsize = 16.0 * scale;
+    let tw = width(&sg.note, size).max(width(&words, wsize));
+    if tw > 0.0 {
+        let x = cx - r - 10.0 * scale - tw;
+        cv.rect(x - 6.0 * scale, cy - r, tw + 10.0 * scale, 2.0 * r, [0, 0, 0, 166]);
+        cv.text(font, cx - r - 10.0 * scale - width(&sg.note, size), cy - r + 2.0 * scale, size, NOTE_COLOR, &sg.note);
+        if !words.is_empty() {
+            let c = if sg.trouble { TROUBLE_COLOR } else { WORDS_COLOR };
+            cv.text(font, cx - r - 10.0 * scale - width(&words, wsize), cy - r + 2.0 * scale + line, wsize, c, &words);
         }
     }
+    cv.squircle(cx, cy, r, ring_color(sg.link));
+    cv.squircle(cx, cy, r - 3.0 * scale, [0x1a, 0x1a, 0x1a, 255]);
+    match sg.level {
+        // the inside grows with the voice; a small heart shows that the microphone is on
+        Some(l) => cv.squircle(cx, cy, (r - 6.0 * scale) * l.clamp(0.25, 1.0), [0xff, 0x4d, 0x4d, 255]),
+        None => cv.line(cx - 5.0 * scale, cy, cx + 5.0 * scale, cy, 2.0 * scale, [0x66, 0x66, 0x66, 255]),
+    }
+}
+
+// what the sign shows now; None when there is nothing to show (no AI, no microphone)
+fn sign_of(mic: &mic::Mic, said: &Option<(String, Instant)>, partial: &str, voice: &str, link: Link, now: Instant) -> Option<Sign> {
+    let level = if mic.state == mic::State::On { Some(mic.level) } else { None };
+    let failed = match &mic.state {
+        mic::State::Failed(e) => Some(format!("microphone: {}", e.chars().take(50).collect::<String>())),
+        _ => None,
+    };
+    if link == Link::None && level.is_none() && failed.is_none() {
+        return None;
+    }
+    let note = match (&failed, link) {
+        (Some(f), _) => f.clone(),
+        (None, Link::None) => String::from("microphone on"),
+        (None, l) => link_note(l).to_string(),
+    };
+    let fresh = said.as_ref().filter(|(_, t)| now.duration_since(*t) < SAID_FOR).map(|(p, _)| p.clone());
+    let (words, trouble) = if !partial.is_empty() {
+        (format!("{}...", partial), false)
+    } else if let Some(p) = fresh {
+        (format!("\"{}\"", p), false)
+    } else if voice.starts_with("no voice") {
+        (voice.to_string(), true)
+    } else if voice == "loading" {
+        (String::from("loading the voice model..."), false)
+    } else {
+        (String::new(), false)
+    };
+    Some(Sign { link, level, words, trouble, note })
 }
 
 impl Win {
@@ -233,7 +321,23 @@ impl Win {
         let surface = SurfaceTexture::new(size.width.max(1), size.height.max(1), Arc::clone(&window));
         let pixels = Pixels::new(size.width.max(1), size.height.max(1), surface).map_err(|e| format!("no_video: {}", e))?;
         let place = draw::place(size.width as usize, size.height as usize, 800.0, 600.0);
-        Ok(Win { window, pixels, ex, person: Person::default(), place, sized: false, ended: false, seq: u64::MAX, asked: Instant::now(), mic: mic::Mic::default() })
+        Ok(Win {
+            window,
+            pixels,
+            ex,
+            person: Person::default(),
+            place,
+            sized: false,
+            ended: false,
+            seq: u64::MAX,
+            asked: Instant::now(),
+            mic: mic::Mic::default(),
+            hearing: None,
+            said: None,
+            partial: String::new(),
+            voice: String::new(),
+            title: title.to_string(),
+        })
     }
 
     fn resize(&mut self, w: u32, h: u32) {
@@ -266,10 +370,47 @@ impl Win {
         let scale = self.window.scale_factor() as f32;
         let mut cv = Canvas::new(w, h, self.pixels.frame_mut());
         let (pl, said) = draw::frame(&mut cv, font, &frame);
-        // the microphone: on while the frames ask for it; its level goes with the next input
-        self.mic.want(said.mic, Instant::now());
+        let now = Instant::now();
+        let (link, listen, title) = {
+            let e = self.ex.lock().unwrap_or_else(|p| p.into_inner());
+            (e.link, e.listen, e.title.clone())
+        };
+        if !title.is_empty() && title != self.title {
+            self.window.set_title(&format!("lust: {}", title));
+            self.title = title;
+        }
+        // lust dev: the words of the person; the microphone sends its sound there from now on
+        if listen && self.hearing.is_none() {
+            let h = voice::Hearing::start();
+            self.mic.words = Some(h.tx.clone());
+            if self.mic.state == mic::State::On {
+                self.mic.stop();
+            }
+            self.hearing = Some(h);
+        }
+        if let Some(h) = &self.hearing {
+            let (phrases, partial, state) = h.take();
+            if !phrases.is_empty() {
+                let mut e = self.ex.lock().unwrap_or_else(|p| p.into_inner());
+                for p in &phrases {
+                    e.put_heard(p);
+                }
+            }
+            if let Some(p) = phrases.last() {
+                self.said = Some((p.clone(), now));
+            }
+            self.partial = partial;
+            if state != self.voice {
+                self.ex.lock().unwrap_or_else(|p| p.into_inner()).voice = state.clone();
+                self.voice = state;
+            }
+        }
+        // the microphone: on while the frames ask for it, and in lust dev; its level goes
+        // with the next input
+        self.mic.want(said.mic || listen, now);
         self.person.mic = self.mic.read();
-        overlay(&mut cv, font, scale, &status, self.mic.note());
+        let sign = sign_of(&self.mic, &self.said, &self.partial, &self.voice, link, now);
+        overlay(&mut cv, font, scale, &status, sign.as_ref());
         self.place = pl;
         if let Err(e) = self.pixels.render() {
             eprintln!("lust: the window cannot show the frame: {}", e);
@@ -288,6 +429,8 @@ struct App {
     // why no window could be opened (lust then uses the browser)
     failed: Option<String>,
     pinged: Instant,
+    // lust dev: closing the window only puts it into the taskbar (the AI goes on)
+    keep: bool,
 }
 
 impl ApplicationHandler for App {
@@ -311,6 +454,7 @@ impl ApplicationHandler for App {
         let font = &self.font;
         let Some(w) = self.wins.iter_mut().find(|w| w.window.id() == id) else { return };
         match ev {
+            WindowEvent::CloseRequested if self.keep => w.window.set_minimized(true),
             WindowEvent::CloseRequested => {
                 w.mic.stop();
                 // the program ends when it hears that (src/bin/lust.rs); the window goes at once
@@ -358,12 +502,13 @@ impl ApplicationHandler for App {
 }
 
 // opens a window on the main thread and runs the world (a function that runs the loop of
-// lust::bin with this exchange) on a thread of its own, until the world ends. Err when no
+// lust::bin with this exchange) on a thread of its own, until the world ends. keep: closing
+// the window only puts it into the taskbar (lust dev). Err when no
 // window can be opened (no video card, no screen): then the world never started, and the
 // caller may use the browser. Ok holds what the world ended with
-pub fn run(title: &str, ex: Arc<Mutex<Exchange>>, world: Box<dyn FnOnce() -> Result<(), String> + Send>) -> Result<Result<(), String>, String> {
+pub fn run(title: &str, keep: bool, ex: Arc<Mutex<Exchange>>, world: Box<dyn FnOnce() -> Result<(), String> + Send>) -> Result<Result<(), String>, String> {
     let el = EventLoop::new().map_err(|e| format!("no_window: {}", e))?;
-    let mut app = App { title: title.to_string(), font: Font::builtin(), wins: Vec::new(), first: Some(ex), world: Some(world), running: None, failed: None, pinged: Instant::now() };
+    let mut app = App { title: title.to_string(), font: Font::builtin(), wins: Vec::new(), first: Some(ex), world: Some(world), running: None, failed: None, pinged: Instant::now(), keep };
     el.run_app(&mut app).map_err(|e| format!("no_window: {}", e))?;
     if let Some(e) = app.failed {
         return Err(e);

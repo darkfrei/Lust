@@ -9,9 +9,10 @@ while it grows (or in the browser, with `--web`).
 
 ```
 cargo build --release                      # makes target/release/lust (lust.exe on Windows)
-lust dev  <folder> [--web] [--port 8730] [--fps 60] [--no-web] # an MCP server for an AI, and the live world in a window
+lust dev  [<folder>] [--web] [--port 8730] [--fps 60] [--no-web] # an MCP server for an AI, and the live world in a window
 lust run  <folder> [--web] [--port 8730] [--fps 60]      # the world in a window (--web: in the browser)
 lust test <folder>                                       # the tests of the folder
+lust hear <file.wav>                                     # the words the voice recognizer hears in it
 ```
 
 Try it with the Pong that an AI built through MCP alone (below):
@@ -21,23 +22,35 @@ lust run examples/pong          # a window opens, keys W/S or up/down
 lust test examples/pong
 ```
 
-## Giving an AI a folder
+## Giving an AI the games
 
-The folder is the permission. The person chooses it once, in the settings of the AI
-client. The AI writes Lua files there and nowhere else, and never touches Rust.
+The folder of games is the permission: the folder `games` beside `lust` (made if it is not
+there). The AI writes Lua files there and nowhere else, and never touches Rust. The person
+names the game in the chat ("open bomberman", or a new name), and the AI opens it with
+`lust_open`; a new name makes a folder with an empty `world.lua`. Nothing in the settings
+changes for another game.
 
-Claude Desktop (`claude_desktop_config.json`) or any MCP client that starts a program:
+Claude Desktop (`claude_desktop_config.json`, Settings, Developer, Edit Config) or any MCP
+client that starts a program (on Windows `lust-dev.bat` writes this text for you):
 
 ```json
-"mcpServers": {
-  "pong": { "command": "C:\\tools\\lust.exe", "args": ["dev", "D:\\games\\pong"] }
+{
+  "mcpServers": {
+    "lust": { "command": "C:\\tools\\lust.exe", "args": ["dev"] }
+  }
 }
 ```
 
-Claude Code: `claude mcp add pong -- C:\tools\lust.exe dev D:\games\pong`
+Claude Code: `claude mcp add lust -- C:\tools\lust.exe dev`
 
-The folder must exist. While the client runs, the person opens the address `lust dev`
-prints (default `http://127.0.0.1:8730`) and sees the world change with every edit.
+`lust dev <folder>` still works: a folder of one game starts in that game (its games are
+the folder around it), a folder of games shows their list.
+
+**One window.** Each client that starts `lust dev` (Claude Desktop, Claude Code, a second
+app) starts its own lust. The first one opens the window, the microphone and the world and
+listens for the others on `127.0.0.1:8729` (the hub); a later one opens nothing and passes
+its messages to the first. So there is one window and one world for all of them. lust ends
+when its last client went away.
 
 ## The folder
 
@@ -96,6 +109,8 @@ change lets it run again. `lust_restart` starts it again from `world.lua`.
 
 | Tool | What it does |
 |---|---|
+| `lust_open` | the game the person names (a folder in `games`; a new name makes it); no name: the list |
+| `lust_listen` | waits up to 45 s for the words the person says (below), and gives them |
 | `lust_guide` | the format and every Lua function, once |
 | `lust_files` | the files with their lines, how the live world is, where the person sees it |
 | `lust_read` | a file, or its lines `from`..`to` |
@@ -167,7 +182,7 @@ the game has ended. In `lust dev` the world only pauses, so the AI can go on. In
 
 ## When the page or the window is closed
 
-A closed window ends the program at once. With the page, `lust run --web` and a double click pause the game while no page shows it (a hidden tab, or before
+A closed window ends `lust run` and a double click at once; the window of `lust dev` only goes into the taskbar (the AI goes on; quitting the AI client ends it). With the page, `lust run --web` and a double click pause the game while no page shows it (a hidden tab, or before
 the browser opened) and end when the page is closed (3 s later, so a reload is not an end)
 or when no page was heard of for 3 minutes. `lust dev` keeps running: its AI client ends it.
 A game that draws nothing shows what to do instead of a black page.
@@ -200,8 +215,8 @@ feature `web` it is not built. The window below is the second such module.
 `lust run`, `lust dev` and a double click open the game in a **window of its own**, without a
 browser (the feature `native`, on by default). `--web` shows it in the browser instead, and so
 does a computer where no window opens (no video card): lust then says so and opens the page.
-In `lust dev` the AI works over MCP as before, the window only shows; `--no-web` shows nothing
-(the AI alone).
+In `lust dev` the AI works over MCP as before; the window shows the game, a sign of the AI and
+the microphone, and what the person said; `--no-web` shows nothing (the AI alone, no voice).
 
 - winit makes the window and reads the keys and the mouse; pixels puts the picture into it
   through the video card (DirectX 12 or Vulkan on Windows). That is what the overlay of Steam
@@ -214,14 +229,32 @@ In `lust dev` the AI works over MCP as before, the window only shows; `--no-web`
   middle of the window; the window takes the size of the first frame once.
 - It draws when the world made a new frame (60 a second by default), at least 10 times a
   second, never more: it costs nothing when the video card does not wait for the screen.
-- Closing the window ends the program at once, also `lust dev`; `ecs.quit()` ends `lust run`
-  as with the page and pauses `lust dev`. A minimized window pauses `lust run`.
+- Closing the window ends `lust run` at once; in `lust dev` it only goes into the taskbar.
+  `ecs.quit()` ends `lust run` as with the page and pauses `lust dev`. A minimized window
+  pauses `lust run`. The title of the window is the game that is open.
 - **The microphone** (`src/native/mic.rs`, the crate cpal: WASAPI on Windows, ALSA on Linux)
-  is on only while the frames ask for it (`gfx.mic(true)`) and goes off 1.5 s after the last
-  ask, as on the page. The window shows a red dot, "microphone on" and how loud it hears; only
-  the loudness (0..1) reaches the world, the sound is never kept. No microphone, or one the
-  system blocks (Windows: Settings, Privacy, Microphone), is written in the corner instead,
-  and `input.mic()` stays 0.
+  is on while the frames ask for it (`gfx.mic(true)`, off 1.5 s after the last ask, as on the
+  page), and in `lust dev` all the time. Only the loudness (0..1) reaches the world; the sound
+  goes only to the recognizer below and is never kept. No microphone, or one the system
+  blocks (Windows: Settings, Privacy, Microphone), is written in the corner instead, and
+  `input.mic()` stays 0.
+- **The sign** in the top right corner is a squircle: its ring is the AI (grey: no AI yet,
+  green: connected, blue: it waits for your words), its inside the microphone (red, it grows
+  as you speak; a grey dash: off). Beside it: "AI connected" and so on, and under that the
+  words being heard, then the phrase said (6 s), or why there is no voice (orange).
+- **The voice** (`src/native/voice.rs`): vosk (Apache 2.0) turns speech into text on this
+  computer, no internet. It is not built into lust: lust opens `libvosk.dll` (Linux
+  `libvosk.so`) beside it while it runs, with a model folder `vosk-model-...` beside it or one
+  folder deeper. The Windows zip carries the dlls; the russian model (`vosk-model-small-ru-0.22`,
+  about 45 MB) is `lust-voice-ru.zip`. When the person asks the AI to listen, the AI calls
+  `lust_listen`: it waits up to 45 s (a client gives up on a call after a minute) and gives the
+  phrases; the AI does them and calls it again, until the person says stop. What is said while
+  no call waits is kept 90 s for the next call. The phrases go only to the AI, never into the
+  world. Without the dll or the model lust works as before, the sign says what is missing, and
+  `lust_listen` says it too. `lust hear <file.wav>` prints what vosk hears in a sound file (the
+  build on GitHub checks the voice with `tools/voice-check.wav`). The small model mishears
+  sometimes (names, fast speech): the guide tells the AI to take the likely meaning and to ask
+  when unsure.
 - Each window has its own `Exchange`, so a second window is a second `Exchange` (not built
   yet: nothing in Lua asks for one).
 - It adds about 180 crates to the build and about 11 MB to the program (Linux, measured;
@@ -236,7 +269,9 @@ In `lust dev` the AI works over MCP as before, the window only shows; `--no-web`
   `require`, `load`, `pcall`, no string patterns; a time and a memory budget for every run.
   A driver run may take 20 s.
 - The page listens on `127.0.0.1` only. MCP is stdio: only the program that started
-  `lust dev` talks to it.
+  `lust dev` talks to it, and the hub on `127.0.0.1:8729`, which takes only another lust dev
+  (it must say hello first). A program of this computer could reach the hub as it could
+  start lust dev itself: the permission is still the folder of games.
 - There is still no tool that confirms an operation of a role (`src/mcp.rs`). `lust dev`
   is for building, with the folder as the permission; a finished program gives an AI the
   proposal door instead.

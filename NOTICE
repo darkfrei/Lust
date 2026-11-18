@@ -13,3 +13,9 @@ Third-party parts that come with it:
 - DejaVu Sans Mono (Bitstream Vera license; DejaVu changes are in the public domain):
   its glyphs, as a bitmap, are the text of the window (src/native/font.bin). The license
   is in src/native/FONT-LICENSE.txt.
+- Vosk (Apache License 2.0, Alpha Cephei Inc.), https://alphacephei.com/vosk: the
+  speech recognizer. Not in the source; the Windows zip carries libvosk.dll with the
+  runtime dlls of its compiler (libstdc++-6.dll and libgcc_s_seh-1.dll: GPL 3 with the GCC
+  Runtime Library Exception; libwinpthread-1.dll: MIT and BSD style), as vosk publishes
+  them. The russian model in lust-voice-ru.zip is vosk-model-small-ru-0.22 (Apache 2.0).
+- tools/voice-check.wav: two words spoken by espeak-ng, made for the check of the voice.

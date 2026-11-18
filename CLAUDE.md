@@ -15,7 +15,11 @@ a time. The hard decisions are made there: follow them. If one does not fit, sto
   the guide text the model reads. `src/driver.rs`: the test driver (lust_try, test/*.lua).
 - `src/screen.rs`: frame as text, input. `src/web.rs`: the browser display. `src/native`: the
   window (winit + pixels; draw.rs paints the frame, font.bin from tools/font.py; mic.rs:
-  cpal, the loudness of the microphone). `src/saves.rs`,
+  cpal, the loudness of the microphone; voice.rs: vosk opened at run time by libloading,
+  words for the AI via lust_listen). `src/bin/lust.rs` also holds the desk of lust dev
+  (lust_open, the games folder), the ear (lust_listen) and the hub (127.0.0.1:8729, one
+  window for all AI clients). Check the voice with `lust hear tools/voice-check.wav` (needs
+  libvosk and a model beside the binary). `src/saves.rs`,
   `src/pack.rs`, `src/launcher.rs`, `src/bin/lust.rs` (the program lust).
 - `src/lua/ui.lua`: the built-in UI library. `examples/pong`, `examples/menu`: sample projects.
 

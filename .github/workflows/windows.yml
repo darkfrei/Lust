@@ -1,5 +1,7 @@
-# builds lust.exe on a Windows machine of GitHub and packs it, with the example games and two
-# .bat files, as lust-windows.zip. nobody needs Rust to use the result.
+# builds lust.exe on a Windows machine of GitHub and packs it, with the example games, two
+# .bat files and the speech recognizer vosk (its dlls), as lust-windows.zip; the russian model
+# of vosk is the second zip, lust-voice-ru.zip (unpack it beside lust.exe). nobody needs Rust
+# to use the result.
 #   a release:   push a tag v0.1.0 (or on github: Actions, Windows build, Run workflow, and
 #                type the version in the field "tag"); the zip is then in Releases
 #   a test only: Run workflow with the field "tag" empty; the zip is an artifact of that run
@@ -22,7 +24,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build
         shell: bash
@@ -32,11 +34,20 @@ jobs:
         shell: bash
         run: cargo test --release --locked
 
+      - name: Vosk (speech to text, apache 2.0) and its russian model
+        shell: bash
+        run: |
+          curl -sSfL -o vosk.zip https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-win64-0.3.45.zip
+          curl -sSfL -o lust-voice-ru.zip https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
+          powershell -NoProfile -Command "Expand-Archive vosk.zip -DestinationPath vosk"
+          ls -l lust-voice-ru.zip vosk/*
+
       - name: Pack
         shell: bash
         run: |
           mkdir -p pack/games
           cp target/release/lust.exe pack/
+          cp vosk/vosk-win64-0.3.45/*.dll pack/
           cp dist-windows/*.bat pack/
           cp dist-windows/READ-ME.txt pack/
           cp LICENSE-MIT LICENSE-APACHE NOTICE pack/
@@ -48,18 +59,27 @@ jobs:
           cd ..
           ls -l lust-windows.zip
 
-      - name: Run the packed program once (it must start and answer)
+      - name: Run the packed program once (it must start, answer and hear words)
         shell: bash
         run: |
           cd pack
           ./lust.exe test games/pong
           ./lust.exe test games/menu
           ./lust.exe test games/solver
+          powershell -NoProfile -Command "Expand-Archive ../lust-voice-ru.zip -DestinationPath lust-voice-ru"
+          ./lust.exe hear ../tools/voice-check.wav | tee heard.txt
+          grep -q "игрок" heard.txt
+          rm -rf lust-voice-ru heard.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: lust-windows
           path: lust-windows.zip
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: lust-voice-ru
+          path: lust-voice-ru.zip
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
@@ -68,4 +88,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
         run: |
-          gh release create "$TAG" lust-windows.zip --title "Lust $TAG" --generate-notes --target "$GITHUB_SHA"
+          gh release create "$TAG" lust-windows.zip lust-voice-ru.zip --title "Lust $TAG" --generate-notes --target "$GITHUB_SHA"

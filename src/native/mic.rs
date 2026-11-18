@@ -1,13 +1,17 @@
-// the microphone of the window, as the page has it (web.rs): only while the world asks for it
-// (gfx.mic, the line "mic" in the frame), and only the loudness, a number 0..1, ever leaves
-// this file; the sound itself is never kept. cpal reads the microphone (WASAPI on Windows,
+// the microphone of the window, as the page has it (web.rs): while the world asks for it
+// (gfx.mic, the line "mic" in the frame), and in lust dev all the time (the AI hears the
+// words of the person, voice.rs). only the loudness, a number 0..1, goes to the world; the
+// sound goes only to the recognizer of voice.rs and is never kept. cpal reads the microphone (WASAPI on Windows,
 // ALSA on Linux, CoreAudio on macOS). the window shows that the microphone is on
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample};
+
+use super::voice::{mono, Resampler};
 
 // the microphone goes off when the world has not asked for it this long (as the page)
 pub const LET_GO: Duration = Duration::from_millis(1500);
@@ -50,46 +54,61 @@ pub struct Mic {
     pub state: State,
     pub level: f32,
     asked: Option<Instant>,
+    // where the sound goes for words (lust dev), at the rate of vosk
+    pub words: Option<SyncSender<Vec<i16>>>,
 }
 
 impl Default for Mic {
     fn default() -> Mic {
-        Mic { stream: None, heard: Arc::new(AtomicU32::new(0)), state: State::Off, level: 0.0, asked: None }
+        Mic { stream: None, heard: Arc::new(AtomicU32::new(0)), state: State::Off, level: 0.0, asked: None, words: None }
     }
 }
 
-fn listen<T>(device: &cpal::Device, config: cpal::StreamConfig, heard: Arc<AtomicU32>) -> Result<cpal::Stream, String>
+fn listen<T>(device: &cpal::Device, config: cpal::StreamConfig, heard: Arc<AtomicU32>, words: Option<SyncSender<Vec<i16>>>) -> Result<cpal::Stream, String>
 where
     T: SizedSample,
     f32: FromSample<T>,
 {
+    let channels = config.channels as usize;
+    let mut rs = Resampler::new(config.sample_rate);
+    // a stream may report the same trouble many times a second (a buffer ran over): once is enough
+    let said = AtomicBool::new(false);
     device
         .build_input_stream::<T, _, _>(
             config,
             move |data: &[T], _: &cpal::InputCallbackInfo| {
                 let loud = loudness(data.iter().map(|s| s.to_sample::<f32>()));
                 heard.store(loud.to_bits(), Ordering::Relaxed);
+                if let Some(tx) = &words {
+                    let f: Vec<f32> = data.iter().map(|s| s.to_sample::<f32>()).collect();
+                    // a full queue drops the piece: the sound thread never waits
+                    let _ = tx.try_send(rs.push(&mono(&f, channels)));
+                }
             },
-            |e| eprintln!("lust: microphone: {}", e),
+            move |e| {
+                if !said.swap(true, Ordering::Relaxed) {
+                    eprintln!("lust: microphone: {}", e);
+                }
+            },
             None,
         )
         .map_err(|e| e.to_string())
 }
 
-fn open(heard: Arc<AtomicU32>) -> Result<cpal::Stream, String> {
+fn open(heard: Arc<AtomicU32>, words: Option<SyncSender<Vec<i16>>>) -> Result<cpal::Stream, String> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or("no microphone found")?;
     let supported = device.default_input_config().map_err(|e| e.to_string())?;
     let format = supported.sample_format();
     let config: cpal::StreamConfig = supported.into();
     let stream = match format {
-        SampleFormat::I8 => listen::<i8>(&device, config, heard)?,
-        SampleFormat::I16 => listen::<i16>(&device, config, heard)?,
-        SampleFormat::I32 => listen::<i32>(&device, config, heard)?,
-        SampleFormat::U8 => listen::<u8>(&device, config, heard)?,
-        SampleFormat::U16 => listen::<u16>(&device, config, heard)?,
-        SampleFormat::F32 => listen::<f32>(&device, config, heard)?,
-        SampleFormat::F64 => listen::<f64>(&device, config, heard)?,
+        SampleFormat::I8 => listen::<i8>(&device, config, heard, words)?,
+        SampleFormat::I16 => listen::<i16>(&device, config, heard, words)?,
+        SampleFormat::I32 => listen::<i32>(&device, config, heard, words)?,
+        SampleFormat::U8 => listen::<u8>(&device, config, heard, words)?,
+        SampleFormat::U16 => listen::<u16>(&device, config, heard, words)?,
+        SampleFormat::F32 => listen::<f32>(&device, config, heard, words)?,
+        SampleFormat::F64 => listen::<f64>(&device, config, heard, words)?,
         other => return Err(format!("the microphone gives {} samples", other)),
     };
     stream.play().map_err(|e| e.to_string())?;
@@ -104,7 +123,7 @@ impl Mic {
             self.asked = Some(now);
             if self.state == State::Off {
                 self.heard.store(0, Ordering::Relaxed);
-                match open(Arc::clone(&self.heard)) {
+                match open(Arc::clone(&self.heard), self.words.clone()) {
                     Ok(s) => {
                         self.stream = Some(s);
                         self.state = State::On;
@@ -135,15 +154,6 @@ impl Mic {
         self.level = next_level(self.level, loud);
         self.level
     }
-
-    // what the window writes in its corner, and the length of the bar 0..1
-    pub fn note(&self) -> Option<(String, Option<f32>)> {
-        match &self.state {
-            State::Off => None,
-            State::On => Some((String::from("microphone on"), Some(self.level))),
-            State::Failed(e) => Some((format!("microphone: {}", e.chars().take(60).collect::<String>()), None)),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -171,14 +181,13 @@ mod tests {
     fn a_microphone_not_asked_for_stays_off_and_gives_zero() {
         let mut m = Mic::default();
         m.want(false, Instant::now());
-        assert_eq!((m.state.clone(), m.read(), m.note()), (State::Off, 0.0, None));
+        assert_eq!((m.state.clone(), m.read()), (State::Off, 0.0));
         // a failed one is let go after LET_GO and may be tried again
         m.state = State::Failed(String::from("no microphone found"));
         let t = Instant::now();
         m.asked = Some(t);
         m.want(false, t + Duration::from_millis(100));
         assert!(matches!(m.state, State::Failed(_)), "not let go before LET_GO");
-        assert_eq!(m.note().unwrap().0, "microphone: no microphone found");
         m.want(false, t + LET_GO + Duration::from_millis(1));
         assert_eq!(m.state, State::Off);
     }
