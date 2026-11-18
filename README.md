@@ -50,6 +50,10 @@ target/release/lust run examples/pong           # Pong, built by an AI through M
 target/release/lust dev <folder>                # an MCP server: an AI builds in that folder
 ```
 
+**Windows without Rust:** a ready `lust-windows.zip` (lust.exe, example games, two `.bat`
+files) is in [Releases](../../releases); built by GitHub itself (`.github/workflows/windows.yml`).
+Unpack it anywhere and double click `lust.exe`.
+
 ```rust
 use lust::host::Host;
 

@@ -1,0 +1,12 @@
+Lust: games in Lua, run in a window of their own.
+
+1. Double click lust.exe (or lust-games.bat): a list of the games in the folder "games".
+   Click one or use arrows and Enter. F1 in a game comes back to the list.
+2. A game of your own: put its folder (with a world.lua inside) into "games".
+3. An AI that builds a game for you: double click lust-dev.bat and follow what it says.
+4. If a window does not open on your computer, lust opens the game in your browser.
+5. The microphone: a game that asks for it makes the window show a red dot; Windows may ask
+   once, or block it in Settings, Privacy, Microphone.
+
+If Windows SmartScreen says "unknown publisher": the program is not signed (a signature costs
+money). "More info", then "Run anyway".

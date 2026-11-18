@@ -1,0 +1,71 @@
+# builds lust.exe on a Windows machine of GitHub and packs it, with the example games and two
+# .bat files, as lust-windows.zip. nobody needs Rust to use the result.
+#   a release:   push a tag v0.1.0 (or on github: Actions, Windows build, Run workflow, and
+#                type the version in the field "tag"); the zip is then in Releases
+#   a test only: Run workflow with the field "tag" empty; the zip is an artifact of that run
+name: Windows build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "version for a release, for example v0.1.0 (empty: only a test build)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked
+
+      - name: Tests
+        shell: bash
+        run: cargo test --release --locked
+
+      - name: Pack
+        shell: bash
+        run: |
+          mkdir -p pack/games
+          cp target/release/lust.exe pack/
+          cp dist-windows/*.bat pack/
+          cp dist-windows/READ-ME.txt pack/
+          cp LICENSE-MIT LICENSE-APACHE NOTICE pack/
+          cp src/native/FONT-LICENSE.txt pack/FONT-LICENSE.txt
+          for g in pong menu solver; do cp -r examples/$g pack/games/$g; done
+          rm -rf pack/games/*/.lust
+          cd pack
+          powershell -NoProfile -Command "Compress-Archive -Path * -DestinationPath ../lust-windows.zip"
+          cd ..
+          ls -l lust-windows.zip
+
+      - name: Run the packed program once (it must start and answer)
+        shell: bash
+        run: |
+          cd pack
+          ./lust.exe test games/pong
+          ./lust.exe test games/menu
+          ./lust.exe test games/solver
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lust-windows
+          path: lust-windows.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" lust-windows.zip --title "Lust $TAG" --generate-notes --target "$GITHUB_SHA"

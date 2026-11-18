@@ -51,6 +51,10 @@ target/release/lust run examples/pong           # Pong, собранный ИИ 
 target/release/lust dev <папка>                 # MCP-сервер: ИИ строит в этой папке
 ```
 
+**Windows без Rust:** готовый `lust-windows.zip` (lust.exe, примеры игр, два `.bat`) лежит в
+[Releases](../../releases); его собирает сам GitHub (`.github/workflows/windows.yml`).
+Распакуйте куда угодно и дважды щёлкните `lust.exe`.
+
 ```rust
 use lust::host::Host;
 
