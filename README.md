@@ -264,7 +264,7 @@ winit and pixels, the picture through the video card, as the overlay of Steam ne
 the loudness of the microphone), or in the browser with `--web` (`src/web.rs`). In `lust dev`
 the microphone stays on: the AI can wait for the words of the person (`lust_listen`, vosk on
 this computer), and a squircle in the corner shows the AI (its ring) and the voice (its
-inside). One window for all AI clients. Pong built this way from an empty folder took 11 MCP messages and about
+inside). The window shows only when the AI works on a game; one window for all AI clients. Pong built this way from an empty folder took 11 MCP messages and about
 3 000 tokens of content. All of it: [docs/dev.md](docs/dev.md).
 
 ## The door for an AI (`src/mcp.rs`)

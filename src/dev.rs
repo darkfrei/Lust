@@ -13,6 +13,7 @@
 // the program lust dev adds two (src/bin/lust.rs, desk_tools):
 //   lust_open     the game the person names (a folder in games); a new name makes one
 //   lust_listen   waits for the words of the person (the microphone of the window, voice.rs)
+//   lust_show     shows the window (it stays hidden until the AI works on a game)
 // a change that does not compile is refused and nothing is saved; a change that is saved
 // is tried at once on a fresh world (one tick, one frame) and the answer says how it went.
 use crate::driver::{run_tests, Driver};
@@ -97,6 +98,7 @@ draw() -> the frame as text lines   events() -> what the world told the display 
 print(...) and returned values are the answer (numbers 4 decimals).
 
 GAMES AND VOICE
+The window of the person stays hidden until you work on a game (lust_open, lust_write, ...), then it appears; if the person closed it, the next such call shows it again, or call lust_show. Reading (lust_guide, lust_files, lust_read) does not show it.
 The person names the game: lust_open(name) opens the folder games/<name> (a new name makes it, with an empty world.lua); lust_open() lists the games. Every other tool works on the open game.
 When the person asks you to listen (listen, слушай), call lust_listen: it waits up to 45 s and gives the words the person said (a recognizer on this computer; it mishears sometimes, so take the likely meaning and ask when unsure). Do what they said, answer in one or two short sentences, then call lust_listen again. Nothing heard: call it again. Stop listening when the person says stop (стоп, хватит).
 
@@ -137,6 +139,7 @@ pub fn game_tools() -> Vec<Tool> {
 pub fn desk_tools() -> Vec<Tool> {
     let mut v = vec![
         tool("lust_open", "Open the game the person names: the folder games/<name> (a new name makes it). Without a name: the list of games.", json!({"type": "object", "properties": {"name": {"type": "string"}}}), false),
+        tool("lust_show", "Show the window of the game to the person (it is hidden until you work on a game, and after the person closed it).", json!({"type": "object", "properties": {}}), false),
         tool("lust_listen", "Wait up to 45 s for the words the person says into the microphone; gives what was heard (see the guide, GAMES AND VOICE).", json!({"type": "object", "properties": {"seconds": {"type": "integer"}}}), true),
     ];
     v.extend(game_tools());

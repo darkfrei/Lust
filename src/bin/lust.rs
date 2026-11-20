@@ -13,8 +13,10 @@
 //       in a window (--web: in the browser at http://127.0.0.1:<port>; --no-web: nowhere,
 //       the AI alone). without a folder the games are the folder games beside lust and the
 //       AI opens the one the person names (lust_open); with the folder of a game it starts
-//       there. the microphone stays on: the AI may wait for the words of the person
-//       (lust_listen). closing the window only puts it into the taskbar. a second lust dev
+//       there. the window stays hidden until the AI works on a game (a client starts lust dev
+//       when it starts, so nobody sees it until then); the person may close it, the AI goes
+//       on and its next work shows it again (lust_show too). with the window on, the
+//       microphone is on: the AI may wait for the words of the person (lust_listen). a second lust dev
 //       (another AI client) shows no window of its own: it passes its messages to the first
 //       (the hub, 127.0.0.1:8729), so there is one window, one microphone, one world
 //   lust pack <folder>       the game of the folder as ONE file (folder/dist/<name>): a double
@@ -321,12 +323,24 @@ impl Tools for Desk<'_> {
             "lust_open" => self.open(args),
             // the loop answers it when the person has spoken (see Ear)
             "lust_listen" => Err(String::from("no voice here")),
+            // the loop has already asked the window to show (see wants_window)
+            "lust_show" => Ok(String::from("the window is shown")),
             _ => match self.show {
                 Show::Game(s) => DevTools { s }.call(name, args),
                 Show::Menu(_) => Err(String::from("no game is open: lust_open(name) first (lust_open() lists the games)")),
             },
         }
     }
+}
+
+// the calls that bring the window up: the AI works on a game, or listens to the person.
+// reading (lust_guide, lust_files, lust_read, lust_test, lust_try) leaves it hidden
+fn wants_window(tool: &str, args: &Value) -> bool {
+    // lust_open without a name only lists the games
+    if tool == "lust_open" {
+        return args.get("name").and_then(|n| n.as_str()).is_some_and(|n| !n.trim().is_empty());
+    }
+    matches!(tool, "lust_open" | "lust_write" | "lust_edit" | "lust_delete" | "lust_undo" | "lust_restart" | "lust_pack" | "lust_listen" | "lust_show")
 }
 
 // ---------- the ear of lust dev: the words of the person for the AI ----------
@@ -354,10 +368,12 @@ impl Ear {
     }
 
     // one line of a client: lust_listen waits here, the rest goes to the desk
-    fn line(&mut self, desk: &mut Desk, outs: &Outs, client: usize, line: &str, voice: Option<String>) {
+    // gives whether the call asks for the window
+    fn line(&mut self, desk: &mut Desk, outs: &Outs, client: usize, line: &str, voice: Option<String>) -> bool {
         if line.trim().is_empty() {
-            return;
+            return false;
         }
+        let mut show = false;
         if let Ok(v) = serde_json::from_str::<Value>(line) {
             let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("");
             if method == "initialize" {
@@ -369,6 +385,8 @@ impl Ear {
                 }
             }
             let tool = v.get("params").and_then(|p| p.get("name")).and_then(|n| n.as_str());
+            let args = v.get("params").and_then(|p| p.get("arguments")).cloned().unwrap_or(Value::Null);
+            show = method == "tools/call" && tool.is_some_and(|t| wants_window(t, &args));
             if let (Some(id), "tools/call", Some("lust_listen")) = (v.get("id").filter(|i| i.is_string() || i.is_number()), method, tool) {
                 match voice {
                     Some(why) => send_to(outs, client, &late_answer(id.clone(), why, true)),
@@ -377,12 +395,13 @@ impl Ear {
                         self.pending.push((client, id.clone(), Instant::now() + Duration::from_secs(secs)));
                     }
                 }
-                return;
+                return show;
             }
         }
         if let Some(text) = handle_text(desk, line) {
             send_to(outs, client, &text);
         }
+        show
     }
 
     // what the window heard goes to the calls that wait; a call that waited long enough
@@ -602,7 +621,6 @@ fn live(a: &Args, ex: Arc<Mutex<Exchange>>, hub: Option<TcpListener>) -> Result<
         }
         let mut e = ex.lock().unwrap_or_else(|p| p.into_inner());
         e.link = Link::Waiting;
-        e.listen = a.window;
         Some(rx)
     } else {
         None
@@ -624,7 +642,12 @@ fn live(a: &Args, ex: Arc<Mutex<Exchange>>, hub: Option<TcpListener>) -> Result<
                         Some(ex.lock().unwrap_or_else(|p| p.into_inner()).voice.clone()).filter(|v| v.starts_with("no voice"))
                     };
                     let mut desk = Desk { show: &mut show, root: root.as_deref().unwrap_or(Path::new(".")), url: url.clone() };
-                    ear.line(&mut desk, &outs, c, &line, voice);
+                    if ear.line(&mut desk, &outs, c, &line, voice) && a.window {
+                        // the window and the microphone come up when the AI starts to work
+                        let mut e = ex.lock().unwrap_or_else(|p| p.into_inner());
+                        e.show += 1;
+                        e.listen = true;
+                    }
                     continue;
                 }
                 Ok(Msg::Hello(c)) => {
@@ -909,12 +932,12 @@ mod tests {
         let mut desk = Desk { show: &mut show, root: &root, url: None };
         let call = |id: u64, name: &str, args: &str| format!("{{\"jsonrpc\":\"2.0\",\"id\":{},\"method\":\"tools/call\",\"params\":{{\"name\":\"{}\",\"arguments\":{}}}}}", id, name, args);
         assert_eq!(ear.link(), Link::Waiting);
-        ear.line(&mut desk, &outs, 0, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}", None);
+        assert!(!ear.line(&mut desk, &outs, 0, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}", None), "saying hello does not show the window");
         assert_eq!(ear.link(), Link::Connected);
         // no game yet: the tools of a game say what to do; a new name makes a game
-        ear.line(&mut desk, &outs, 0, &call(2, "lust_files", "{}"), None);
+        assert!(!ear.line(&mut desk, &outs, 0, &call(2, "lust_files", "{}"), None), "reading leaves the window hidden");
         ear.line(&mut desk, &outs, 0, &call(3, "lust_open", "{\"name\":\"../up\"}"), None);
-        ear.line(&mut desk, &outs, 0, &call(4, "lust_open", "{\"name\":\"bomber\"}"), None);
+        assert!(ear.line(&mut desk, &outs, 0, &call(4, "lust_open", "{\"name\":\"bomber\"}"), None), "working on a game shows it");
         ear.line(&mut desk, &outs, 0, &call(5, "lust_open", "{}"), None);
         let a = one.take();
         assert!(said(&a[1]).contains("lust_open"), "{:?}", a[1]);
@@ -956,6 +979,25 @@ mod tests {
         ear.gone(1);
         assert!(ear.pending.is_empty());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_work_on_a_game_brings_the_window_up() {
+        let none = serde_json::json!({});
+        let named = serde_json::json!({"name": "bomber"});
+        for t in ["lust_write", "lust_edit", "lust_delete", "lust_undo", "lust_restart", "lust_pack", "lust_listen", "lust_show"] {
+            assert!(wants_window(t, &none), "{}", t);
+        }
+        assert!(wants_window("lust_open", &named));
+        assert!(!wants_window("lust_open", &none), "the list of games only reads");
+        assert!(!wants_window("lust_open", &serde_json::json!({"name": " "})));
+        for t in ["lust_guide", "lust_files", "lust_read", "lust_test", "lust_try", "nothing"] {
+            assert!(!wants_window(t, &none), "{}", t);
+        }
+        // every tool of the desk is named in one of the two lists
+        for t in desk_tools() {
+            assert!(wants_window(&t.name, &named) || ["lust_guide", "lust_files", "lust_read", "lust_test", "lust_try"].contains(&t.name.as_str()), "{}", t.name);
+        }
     }
 
     #[test]

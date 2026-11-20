@@ -6,8 +6,9 @@
 // picture itself is drawn by the processor (draw.rs); cpal hears the microphone when the
 // world asks for it (mic.rs), and only its loudness goes on. in lust dev the microphone stays
 // on and its words go to the AI (voice.rs, vosk), and a squircle in the corner shows both:
-// the ring how the AI is linked, the inside how loud the person speaks. a closed window of
-// lust dev only goes to the taskbar: the AI goes on with its work. leave it out with the
+// the ring how the AI is linked, the inside how loud the person speaks. the window of lust dev
+// is hidden until the AI works on a game (Exchange::show), and a closed one is only hidden
+// again (the microphone off): the AI goes on, and its next work shows the window. leave it out with the
 // feature "native".
 // the window runs on the main thread (winit wants that); the world runs on a thread of its own.
 // every window has its own Exchange: today lust opens one, a second one is another Win
@@ -215,6 +216,10 @@ struct Win {
     partial: String,
     voice: String,
     title: String,
+    // lust dev: hidden (not shown yet, or closed by the person), and the number of the last
+    // request to show it that was served
+    hidden: bool,
+    shown_seq: u64,
 }
 
 // what the sign in the corner shows
@@ -314,8 +319,8 @@ fn sign_of(mic: &mic::Mic, said: &Option<(String, Instant)>, partial: &str, voic
 }
 
 impl Win {
-    fn open(el: &ActiveEventLoop, title: &str, ex: Arc<Mutex<Exchange>>) -> Result<Win, String> {
-        let attrs = Window::default_attributes().with_title(title).with_inner_size(LogicalSize::new(crate::screen::DEFAULT_SIZE.0, crate::screen::DEFAULT_SIZE.1));
+    fn open(el: &ActiveEventLoop, title: &str, ex: Arc<Mutex<Exchange>>, hidden: bool) -> Result<Win, String> {
+        let attrs = Window::default_attributes().with_title(title).with_visible(!hidden).with_inner_size(LogicalSize::new(crate::screen::DEFAULT_SIZE.0, crate::screen::DEFAULT_SIZE.1));
         let window = Arc::new(el.create_window(attrs).map_err(|e| format!("no_window: {}", e))?);
         let size = window.inner_size();
         let surface = SurfaceTexture::new(size.width.max(1), size.height.max(1), Arc::clone(&window));
@@ -337,6 +342,8 @@ impl Win {
             partial: String::new(),
             voice: String::new(),
             title: title.to_string(),
+            hidden,
+            shown_seq: 0,
         })
     }
 
@@ -436,7 +443,7 @@ struct App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, el: &ActiveEventLoop) {
         let Some(ex) = self.first.take() else { return };
-        match Win::open(el, &self.title, ex) {
+        match Win::open(el, &self.title, ex, self.keep) {
             Ok(w) => {
                 self.wins.push(w);
                 if let Some(world) = self.world.take() {
@@ -454,7 +461,12 @@ impl ApplicationHandler for App {
         let font = &self.font;
         let Some(w) = self.wins.iter_mut().find(|w| w.window.id() == id) else { return };
         match ev {
-            WindowEvent::CloseRequested if self.keep => w.window.set_minimized(true),
+            // lust dev: the person closes the window, the AI goes on; its next work shows it again
+            WindowEvent::CloseRequested if self.keep => {
+                w.mic.stop();
+                w.hidden = true;
+                w.window.set_visible(false);
+            }
             WindowEvent::CloseRequested => {
                 w.mic.stop();
                 // the program ends when it hears that (src/bin/lust.rs); the window goes at once
@@ -471,7 +483,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position: PhysicalPosition { x, y }, .. } => w.person.mouse = (x, y, w.person.mouse.2),
             WindowEvent::MouseInput { state, .. } => w.person.button(state == ElementState::Pressed),
-            WindowEvent::RedrawRequested if !w.ended => w.redraw(font),
+            WindowEvent::RedrawRequested if !w.ended && !w.hidden => w.redraw(font),
             _ => {}
         }
     }
@@ -489,7 +501,20 @@ impl ApplicationHandler for App {
                 w.ex.lock().unwrap_or_else(|p| p.into_inner()).ping();
             }
         }
-        for w in self.wins.iter_mut().filter(|w| !w.ended) {
+        // lust dev: the AI asked for the window (and the person may have closed it before)
+        if self.keep {
+            for w in self.wins.iter_mut().filter(|w| !w.ended) {
+                let asked = w.ex.lock().unwrap_or_else(|p| p.into_inner()).show;
+                if asked != w.shown_seq {
+                    w.shown_seq = asked;
+                    w.hidden = false;
+                    w.window.set_visible(true);
+                    w.window.set_minimized(false);
+                    w.window.focus_window();
+                }
+            }
+        }
+        for w in self.wins.iter_mut().filter(|w| !w.ended && !w.hidden) {
             let seq = w.ex.lock().unwrap_or_else(|p| p.into_inner()).seq;
             if seq != w.seq || now.duration_since(w.asked) >= DRAW_AT_LEAST {
                 w.seq = seq;

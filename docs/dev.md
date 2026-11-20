@@ -46,6 +46,14 @@ Claude Code: `claude mcp add lust -- C:\tools\lust.exe dev`
 `lust dev <folder>` still works: a folder of one game starts in that game (its games are
 the folder around it), a folder of games shows their list.
 
+**The window comes when the AI works.** An AI client starts `lust dev` when the client itself
+starts, long before a game is wanted, so lust starts with no window and nothing on the
+screen (one idle process, about 4 % of one core and 100 MB). The window appears at the first
+work on a game: `lust_open` with a name, `lust_write`, `lust_edit`, `lust_delete`, `lust_undo`,
+`lust_restart`, `lust_pack`, `lust_listen`, or `lust_show`. Reading (`lust_guide`, `lust_files`,
+`lust_read`, `lust_test`, `lust_try`, `lust_open` without a name) leaves it hidden. The
+microphone is on only while the window is shown.
+
 **One window.** Each client that starts `lust dev` (Claude Desktop, Claude Code, a second
 app) starts its own lust. The first one opens the window, the microphone and the world and
 listens for the others on `127.0.0.1:8729` (the hub); a later one opens nothing and passes
@@ -110,6 +118,7 @@ change lets it run again. `lust_restart` starts it again from `world.lua`.
 | Tool | What it does |
 |---|---|
 | `lust_open` | the game the person names (a folder in `games`; a new name makes it); no name: the list |
+| `lust_show` | shows the window to the person (hidden until the AI works on a game, and after the person closed it) |
 | `lust_listen` | waits up to 45 s for the words the person says (below), and gives them |
 | `lust_guide` | the format and every Lua function, once |
 | `lust_files` | the files with their lines, how the live world is, where the person sees it |
@@ -182,7 +191,7 @@ the game has ended. In `lust dev` the world only pauses, so the AI can go on. In
 
 ## When the page or the window is closed
 
-A closed window ends `lust run` and a double click at once; the window of `lust dev` only goes into the taskbar (the AI goes on; quitting the AI client ends it). With the page, `lust run --web` and a double click pause the game while no page shows it (a hidden tab, or before
+A closed window ends `lust run` and a double click at once; the window of `lust dev` is only hidden (the microphone off, the AI goes on; its next work on a game, or `lust_show`, shows it again; quitting the AI client ends lust). With the page, `lust run --web` and a double click pause the game while no page shows it (a hidden tab, or before
 the browser opened) and end when the page is closed (3 s later, so a reload is not an end)
 or when no page was heard of for 3 minutes. `lust dev` keeps running: its AI client ends it.
 A game that draws nothing shows what to do instead of a black page.
@@ -229,7 +238,7 @@ the microphone, and what the person said; `--no-web` shows nothing (the AI alone
   middle of the window; the window takes the size of the first frame once.
 - It draws when the world made a new frame (60 a second by default), at least 10 times a
   second, never more: it costs nothing when the video card does not wait for the screen.
-- Closing the window ends `lust run` at once; in `lust dev` it only goes into the taskbar.
+- Closing the window ends `lust run` at once; in `lust dev` it is only hidden (see above).
   `ecs.quit()` ends `lust run` as with the page and pauses `lust dev`. A minimized window
   pauses `lust run`. The title of the window is the game that is open.
 - **The microphone** (`src/native/mic.rs`, the crate cpal: WASAPI on Windows, ALSA on Linux)

@@ -107,6 +107,9 @@ pub struct Exchange {
     // hear words at all (voice: empty while it cannot say yet)
     pub link: Link,
     pub listen: bool,
+    // lust dev: how many times the AI asked for the window (it opens only when the AI works
+    // on a game, and again after the person closed it); the window shows when it grows
+    pub show: u64,
     pub heard: Vec<String>,
     pub voice: String,
     // the name of what is shown (the window puts it in its title)

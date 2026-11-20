@@ -4,8 +4,9 @@ Lust: games in Lua, run in a window of their own.
    Click one or use arrows and Enter. F1 in a game comes back to the list.
 2. A game of your own: put its folder (with a world.lua inside) into "games".
 3. An AI that builds a game for you: double click lust-dev.bat and follow what it says.
-   Closing that window only puts it into the taskbar: the AI goes on. It ends when you quit
-   Claude Desktop.
+   Claude Desktop starts lust by itself when it starts, but lust shows no window until the AI
+   works on a game. You can close the window: the AI goes on, and its next work shows it again.
+   lust itself ends when you quit Claude Desktop (the icon by the clock, Quit).
    The square sign top right: its ring is the AI (grey: none yet, green: connected, blue: it
    listens to you), its inside your microphone (it grows when you speak).
    To give the AI orders by voice: unpack lust-voice-ru.zip into this folder (the russian
